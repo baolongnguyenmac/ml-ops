@@ -1,4 +1,19 @@
 numpy
 pandas
 scikit-learn
+pytest
+datetime
+sqlalchemy
+feast
+mlflow
+bentoml
+evidently
+seaborn
+matplotlib
+dotenv
+ipython
 
+# importlib
+# psycopg
+# psycopg_pool
+# deepchecks
