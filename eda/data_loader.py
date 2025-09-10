@@ -41,8 +41,8 @@ class DataLoaderFactory:
     def get_data_loader(ext_type:str) -> DataLoader:
         filetypes = {
             # có thể mở rộng tại đây
-            '.csv': CSVLoader(),
-            '.zip': ZipLoader()
+            'csv': CSVLoader(),
+            'zip': ZipLoader()
         }
         return filetypes.get(ext_type, None)
 

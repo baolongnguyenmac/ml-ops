@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 
 from eda.data_loader import DataLoaderFactory
 
@@ -41,7 +41,15 @@ class MinMaxScaling(DataPreprocessor):
 
 class OneHotEncoding(DataPreprocessor):
     def transform(self, df):
-        pass
+        categorical_columns = df.select_dtypes(include=['object']).columns.tolist()
+
+        encoder = OneHotEncoder(sparse_output=False)
+        one_hot_encoded = encoder.fit_transform(df[categorical_columns])
+        one_hot_df = pd.DataFrame(one_hot_encoded, columns=encoder.get_feature_names_out(categorical_columns))
+        df_encoded = pd.concat([df, one_hot_df], axis=1)
+        df_encoded = df_encoded.drop(categorical_columns, axis=1)
+
+        return df_encoded
 
 class DataProcessorStrategy:
     @staticmethod
