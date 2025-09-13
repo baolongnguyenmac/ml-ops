@@ -34,5 +34,5 @@ if __name__=='__main__':
     load_dotenv()
 
     loader = DataLoaderFactory.get_data_loader('.zip')
-    df = loader.load('./tmp/archive.zip')
+    df = loader.load('./db_preparation/archive.zip')
     DataExplorerStrategy.execute_strategy(DataSummarization(), df)
