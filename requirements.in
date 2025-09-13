@@ -1,19 +1,21 @@
+# basic packages
 numpy
 pandas
 scikit-learn
 pytest
-datetime
-sqlalchemy
-feast
-mlflow
-bentoml
-evidently
 seaborn
 matplotlib
 dotenv
 ipython
 
+# mlops
+sqlalchemy
+feast
+mlflow
+bentoml
+evidently
+psycopg[binary,pool]
+
+# psycopg2
 # importlib
-# psycopg
-# psycopg_pool
 # deepchecks
