@@ -2,7 +2,7 @@ project: feature_store
 provider: local
 registry:
     registry_type: sql
-    path: postgresql+psycopg://postgres:yourPassword@localhost:5432/feast_metadata
+    path: postgresql+psycopg://postgres:Long123ohio@localhost:5432/feast_metadata
     cache_ttl_seconds: 60
     sqlalchemy_config_kwargs:
         echo: false
@@ -15,7 +15,7 @@ online_store:
     database: feast_online
     db_schema: public
     user: postgres
-    password: yourPassword
+    password: Long123ohio
 
 offline_store:
     type: postgres
@@ -24,5 +24,5 @@ offline_store:
     database: feast_offline
     db_schema: public
     user: postgres
-    password: yourPassword
+    password: Long123ohio
 entity_key_serialization_version: 3
