@@ -113,7 +113,7 @@ driver_fv = FeatureView(
         Field(name="created", dtype=UnixTimestamp),
     ],
     entities=[driver_id],
-    ttl=timedelta(days=1),
+    ttl=timedelta(days=7),
     online=True,
     offline=True
 )
