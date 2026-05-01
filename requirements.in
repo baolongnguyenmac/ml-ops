@@ -1,0 +1,23 @@
+# python 3.11
+
+# general
+numpy
+pandas
+ipykernel
+dotenv
+psycopg2-binary
+
+# data lake + lake house
+minio
+pyarrow
+fastparquet
+
+# cdc
+confluent-kafka
+deltalake
+fastavro
+avro
+
+# batch + stream
+pyspark
+apache-flink
