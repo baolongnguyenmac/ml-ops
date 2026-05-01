@@ -1,0 +1,22 @@
+services:
+  company_db:
+    # db of a company
+    image: postgres:latest
+    command: ['postgres', '-c', 'wal_level=logical']
+    container_name: ctn_com_db
+    healthcheck:
+      test: ['CMD', 'psql', '-U', '${COM_DB_NAME}', '-c', 'SELECT 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${COM_DB_PORT}:5432"
+    environment:
+      - POSTGRES_DB=${COM_DB_NAME}
+      - POSTGRES_USER=${COM_DB_USER}
+      - POSTGRES_PASSWORD=${COM_DB_PASSWORD}
+    volumes: 
+      - com_db:/var/lib/postgresql/data
+
+volumes:
+  com_db:
