@@ -44,4 +44,4 @@ if __name__ == "__main__":
     data_dir = "./data"
     os.makedirs(data_dir, exist_ok=True)
 
-    download(start_year=2018, end_year=2019, data_dir=data_dir)
+    download(start_year=2009, end_year=2012, data_dir=data_dir)
