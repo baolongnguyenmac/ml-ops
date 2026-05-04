@@ -11,11 +11,11 @@ psycopg2-binary
 minio
 pyarrow
 fastparquet
+deltalake
 s3fs
 
 # cdc
 confluent-kafka
-deltalake
 fastavro
 avro
 
