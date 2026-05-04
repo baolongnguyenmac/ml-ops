@@ -18,6 +18,8 @@ class PostgresConnection:
     ):
         self.host = host
         self.port = port
+
+        # default: connect to data source
         self.dbname = dbname or os.environ.get("COM_DB_NAME")
         self.user = user or os.environ.get("COM_DB_USER")
         self.password = password or os.environ.get("COM_DB_PASSWORD")
