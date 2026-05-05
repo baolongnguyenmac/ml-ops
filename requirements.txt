@@ -12,6 +12,8 @@ aioitertools==0.13.0
     # via aiobotocore
 aiosignal==1.4.0
     # via aiohttp
+anyio==4.13.0
+    # via httpx
 apache-beam==2.61.0
     # via apache-flink
 apache-flink==2.2.0
@@ -29,20 +31,31 @@ asttokens==3.0.1
 attrs==26.1.0
     # via
     #   aiohttp
+    #   confluent-kafka
     #   jsonschema
     #   referencing
+authlib==1.7.1
+    # via confluent-kafka
 avro==1.12.1
     # via
     #   -r requirements.in
     #   apache-flink
+    #   confluent-kafka
 botocore==1.43.0
     # via aiobotocore
+cachetools==7.1.1
+    # via confluent-kafka
 certifi==2026.4.22
     # via
+    #   confluent-kafka
+    #   httpcore
+    #   httpx
     #   minio
     #   requests
 cffi==2.0.0
-    # via argon2-cffi-bindings
+    # via
+    #   argon2-cffi-bindings
+    #   cryptography
 charset-normalizer==3.4.7
     # via requests
 cloudpickle==2.2.1
@@ -57,6 +70,10 @@ cramjam==2.11.0
     # via fastparquet
 crcmod==1.7
     # via apache-beam
+cryptography==47.0.0
+    # via
+    #   authlib
+    #   joserfc
 debugpy==1.8.20
     # via ipykernel
 decorator==5.2.1
@@ -80,6 +97,7 @@ fastavro==1.12.2
     #   -r requirements.in
     #   apache-beam
     #   apache-flink
+    #   confluent-kafka
 fasteners==0.20
     # via apache-beam
 fastparquet==2026.3.0
@@ -96,14 +114,22 @@ fsspec==2026.4.0
     #   s3fs
 grpcio==1.65.5
     # via apache-beam
+h11==0.16.0
+    # via httpcore
 hdfs==2.7.3
     # via apache-beam
+httpcore==1.0.9
+    # via httpx
 httplib2==0.22.0
     # via
     #   apache-beam
     #   apache-flink
+httpx==0.28.1
+    # via confluent-kafka
 idna==3.13
     # via
+    #   anyio
+    #   httpx
     #   requests
     #   yarl
 ipykernel==7.2.0
@@ -118,6 +144,8 @@ jmespath==1.1.0
     # via
     #   aiobotocore
     #   botocore
+joserfc==1.6.4
+    # via authlib
 jsonpickle==3.4.2
     # via apache-beam
 jsonschema==4.26.0
@@ -260,6 +288,7 @@ requests==2.33.1
     # via
     #   apache-beam
     #   apache-flink
+    #   confluent-kafka
     #   hdfs
 rpds-py==0.30.0
     # via
@@ -291,6 +320,7 @@ traitlets==5.14.3
 typing-extensions==4.15.0
     # via
     #   aiosignal
+    #   anyio
     #   apache-beam
     #   arro3-core
     #   ipython

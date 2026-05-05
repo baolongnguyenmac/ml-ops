@@ -32,8 +32,8 @@ services:
     container_name: ctn_obj_storage
     hostname: minio
     ports:
-      - "9099:9000" # expose để upload data lên (dùng SDK)
-      - "9098:9001"
+      - "9099:9000"
+      - "9098:9001" # expose để upload data lên (dùng SDK)
     volumes:
       - minio_storage:/data
     environment:

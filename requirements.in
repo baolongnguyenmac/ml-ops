@@ -18,6 +18,7 @@ s3fs
 confluent-kafka
 fastavro
 avro
+confluent-kafka[avro]
 
 # batch + stream
 pyspark

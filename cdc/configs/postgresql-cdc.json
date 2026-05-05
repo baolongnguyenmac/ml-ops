@@ -1,0 +1,14 @@
+{
+  "name": "taxi_nyc_cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "company_db",
+    "database.port": "5432",
+    "database.user": "company",
+    "database.password": "company",
+    "database.dbname" : "company",
+    "plugin.name": "pgoutput",
+    "database.server.name": "kafka",
+    "table.include.list": "public.nyc_taxi"
+  }
+}
