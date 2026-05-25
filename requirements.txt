@@ -34,7 +34,7 @@ attrs==26.1.0
     #   confluent-kafka
     #   jsonschema
     #   referencing
-authlib==1.7.1
+authlib==1.7.2
     # via confluent-kafka
 avro==1.12.1
     # via
@@ -70,7 +70,7 @@ cramjam==2.11.0
     # via fastparquet
 crcmod==1.7
     # via apache-beam
-cryptography==47.0.0
+cryptography==48.0.0
     # via
     #   authlib
     #   joserfc
@@ -144,7 +144,7 @@ jmespath==1.1.0
     # via
     #   aiobotocore
     #   botocore
-joserfc==1.6.4
+joserfc==1.6.5
     # via authlib
 jsonpickle==3.4.2
     # via apache-beam
@@ -181,7 +181,7 @@ numpy==2.1.3
     #   pyarrow
 objsize==0.7.1
     # via apache-beam
-orjson==3.11.8
+orjson==3.11.9
     # via apache-beam
 packaging==26.2
     # via
@@ -310,7 +310,7 @@ tornado==6.5.5
     # via
     #   ipykernel
     #   jupyter-client
-traitlets==5.14.3
+traitlets==5.15.0
     # via
     #   ipykernel
     #   ipython

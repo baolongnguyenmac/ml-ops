@@ -1,19 +1,30 @@
-from utils.db_connection import PostgresConnection
-import numpy as np
-import pandas as pd
+from pyspark.sql import SparkSession, DataFrame, Window
+from pyspark.sql import functions as F
 import s3fs
 import time
 import os
 
-from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS
+from utils.db_connection import PostgresConnection
+from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS, SPARK_DTYPES
 
 from dotenv import load_dotenv
 load_dotenv()
 
+spark = (
+    SparkSession
+    .builder
+    .appName('produce data')
+    .config('spark.jars', './spark/jar/postgresql-42.7.11.jar')
+    .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.4.2,software.amazon.awssdk:bundle:2.29.38")
+    .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
+    .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
+    .getOrCreate()
+)
+
 def create_table(conn):
     """Tạo bảng nyc_taxi nếu chưa tồn tại."""
     query = """
-    CREATE TABLE IF NOT EXISTS nyc_taxi (
+    CREATE TABLE IF NOT EXISTS public.nyc_taxi (
         vendor_id               TEXT,
         pickup_datetime         TIMESTAMP,
         dropoff_datetime        TIMESTAMP,
@@ -53,63 +64,69 @@ def _resolve_mapping(df_columns: str) -> dict:
             return schema["mapping"]
     raise ValueError(f"No mapping found for {df_columns}")
 
-def transform_data(df: pd.DataFrame) -> pd.DataFrame:
+def transform_data(df: DataFrame) -> DataFrame:
     """
     1. Đổi tên cột theo mapping tương ứng.
-    2. Thêm cột canonical còn thiếu (fill NaN).
+    2. Thêm cột canonical còn thiếu (fill null).
     3. Đổi kiểu dữ liệu về canonical dtype.
-    4. Thay NaN → None để insert NULL vào Postgres.
+    4. Chỉ giữ lại các cột canonical.
     """
     # 1. Resolve & rename
     mapping = _resolve_mapping('|'.join(df.columns))
-    df.rename(columns=mapping, inplace=True)
+    for old_name, new_name in mapping.items():
+        df = df.withColumnRenamed(old_name, new_name)
 
     # 2. Thêm cột còn thiếu
     for col in LIST_COLS:
         if col not in df.columns:
-            df[col] = np.nan
-
-    # Giữ đúng thứ tự canonical
-    df = df[LIST_COLS]
+            df = df.withColumn(col, F.lit(None))
 
     # 3. Cast dtype
     for col, dtype in LIST_DTYPES.items():
-        if dtype == "datetime64[ns]":
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-        elif dtype == "float64":
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        else:  # object
-            df[col] = df[col].astype("object")
+        spark_type = SPARK_DTYPES[dtype]
+        df = df.withColumn(col, F.col(col).cast(spark_type))
 
-    # 4. NaN → None
-    return df.astype(object).where(df.notna(), None)[LIST_COLS]
+    # 4. Chỉ giữ các cột canonical
+    return df.select(LIST_COLS)
 
-def insert_parquet(conn, filepath: str, n: int = 1, batch_size: int = 17_000, interval: float = 1.0):
-    """Đọc file parquet, lấy n sample cách đều, rồi insert theo batch."""
-    df = pd.read_parquet(filepath)
+def insert_parquet(filepath: str, n: int = 140_000, batch_size: int = 17_000, interval: float = 1.0, chunk_size:int=120):
+    # read parquet
+    df:DataFrame = (
+        spark.read.parquet(filepath)
+        # .repartition(os.path.getsize(filepath)/(1024**2)//chunk_size)
+    )
 
-    # Lấy n sample cách đều
-    indices = np.linspace(0, len(df) - 1, num=n, dtype=int)
-    df = df.iloc[indices].reset_index(drop=True)
+    # sample n rows
+    fraction = min(n/df.count(), 1)
+    df = transform_data(df.sample(fraction=fraction, seed=42))
 
-    df = transform_data(df)
+    # sort by pickup_datetime
+    window_spec = Window.orderBy('pickup_datetime')
+    df = df.withColumn('index', F.row_number().over(window_spec) - 1)
+    df.createOrReplaceTempView('nyc_taxi')
 
-    placeholders = ', '.join(['%s'] * len(LIST_COLS))
-    insert_query = f"INSERT INTO nyc_taxi ({', '.join(LIST_COLS)}) VALUES ({placeholders})"
+    # insert to db
+    total_rows = df.count()
+    for i in range(0, total_rows, batch_size):
+        start_index = i
+        end_index = min(i+batch_size, total_rows)
+        print(f'\tProcess from {start_index} to {end_index}')
 
-    total_rows = len(df)
-    inserted = 0
-
-    with conn.cursor() as cur:
-        while inserted < total_rows:
-            batch = df.iloc[inserted:inserted + batch_size]
-            values = [tuple(row) for row in batch.itertuples(index=False, name=None)]
-            cur.executemany(insert_query, values)
-            conn.commit()
-            inserted += len(batch)
-            print(f"Inserted {inserted}/{total_rows} rows")
-            if inserted < total_rows:
-                time.sleep(interval)
+        tmp_df = spark.sql(f'''
+            select *
+            from nyc_taxi
+            where (nyc_taxi.index >= {start_index}) and (nyc_taxi.index < {end_index})
+        ''')
+        tmp_df.drop('index').write \
+            .format("jdbc") \
+            .option("url", f"jdbc:postgresql://localhost:5432/{os.getenv('COM_DB_NAME')}") \
+            .option("dbtable", "nyc_taxi") \
+            .option("user", os.getenv('COM_DB_USER')) \
+            .option("password", os.getenv('COM_DB_PASSWORD')) \
+            .option("driver", "org.postgresql.Driver") \
+            .mode("append") \
+            .save()
+        time.sleep(interval)
 
     print(f"Done! Inserted {total_rows} rows from {filepath}")
 
@@ -122,9 +139,11 @@ if __name__=='__main__':
 
     with pg as conn:
         create_table(conn)
-        for idx, item in enumerate(list_files):
-            filename = item['Key'].split('/')[-1]
-            if item['Key'].endswith('.parquet'):
-                filepath = os.path.join(data_dir, filename)
-                insert_parquet(conn, filepath=filepath, n=140_000)
-            time.sleep(10)
+
+    # insert parquet into db
+    for idx, item in enumerate(list_files):
+        filename = item['Key'].split('/')[-1]
+        if item['Key'].endswith('.parquet'):
+            filepath = os.path.join(data_dir, filename).replace('s3', 's3a')
+            insert_parquet(filepath)
+        time.sleep(10)

@@ -1,3 +1,5 @@
+from pyspark.sql.types import StringType, DoubleType, TimestampType
+
 LIST_COLS = [
     "vendor_id", "pickup_datetime", "dropoff_datetime", "passenger_count",
     "trip_distance", "rate_code_id", "store_and_fwd_flag", "pickup_longitude",
@@ -131,3 +133,8 @@ map6 = {
 }
 
 SCHEMA_MAPPINGS = [map1, map2, map3, map4, map5, map6]
+SPARK_DTYPES = {
+    "object": StringType(),
+    "float64": DoubleType(),
+    "datetime64[ns]": TimestampType(),
+}
