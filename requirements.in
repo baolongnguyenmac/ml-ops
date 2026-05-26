@@ -9,6 +9,7 @@ psycopg2-binary
 
 # data lake + lake house
 minio
+boto3
 pyarrow
 fastparquet
 deltalake
