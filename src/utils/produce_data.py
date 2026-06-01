@@ -10,16 +10,17 @@ from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS, SPARK_DTYPES
 from dotenv import load_dotenv
 load_dotenv()
 
-spark = (
-    SparkSession
-    .builder
-    .appName('produce data')
-    .config('spark.jars', './spark/jar/postgresql-42.7.11.jar')
-    .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.4.2,software.amazon.awssdk:bundle:2.29.38")
-    .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
-    .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
-    .getOrCreate()
-)
+def create_session() -> SparkSession:
+    return (
+        SparkSession
+        .builder
+        .appName('produce data')
+        .config('spark.jars', './spark/jar/postgresql-42.7.11.jar')
+        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.4.2,software.amazon.awssdk:bundle:2.29.38")
+        .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
+        .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
+        .getOrCreate()
+    )
 
 def create_table(conn):
     """Tạo bảng nyc_taxi nếu chưa tồn tại."""
@@ -89,7 +90,7 @@ def transform_data(df: DataFrame) -> DataFrame:
     # 4. Chỉ giữ các cột canonical
     return df.select(LIST_COLS)
 
-def insert_parquet(filepath: str, n: int = 140_000, batch_size: int = 17_000, interval: float = 1.0, chunk_size:int=120):
+def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_size: int = 17_000, interval: float = 1.0, chunk_size:int=120):
     # read parquet
     df:DataFrame = (
         spark.read.parquet(filepath)
@@ -129,21 +130,28 @@ def insert_parquet(filepath: str, n: int = 140_000, batch_size: int = 17_000, in
         time.sleep(interval)
 
     print(f"Done! Inserted {total_rows} rows from {filepath}")
+    return total_rows
 
 if __name__=='__main__':
     pg = PostgresConnection(port=5432)
     fs = s3fs.S3FileSystem()
+    n_rows = 0
 
-    data_dir = 's3://flezi-agent/nyc-taxi/'
+    data_dir = 's3://flezi-data/nyc-taxi/'
     list_files = fs.listdir(data_dir)
 
     with pg as conn:
         create_table(conn)
 
+    spark = create_session()
+
     # insert parquet into db
     for idx, item in enumerate(list_files):
         filename = item['Key'].split('/')[-1]
         if item['Key'].endswith('.parquet'):
+            print(f'\n===== {idx}/{len(list_files)}. Process {filename} =====\n')
             filepath = os.path.join(data_dir, filename).replace('s3', 's3a')
-            insert_parquet(filepath)
+            n_new_rows = insert_parquet(spark, filepath)
+            n_rows += n_new_rows
+            print(f'\nTotal inserted: {n_rows}\n')
         time.sleep(10)
