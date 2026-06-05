@@ -8,7 +8,7 @@ from utils.db_connection import PostgresConnection
 from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS, SPARK_DTYPES
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv('.env_file/infra.env')
 
 def create_session() -> SparkSession:
     return (
@@ -120,7 +120,7 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
         ''')
         tmp_df.drop('index').write \
             .format("jdbc") \
-            .option("url", f"jdbc:postgresql://localhost:5432/{os.getenv('COM_DB_NAME')}") \
+            .option("url", f"jdbc:postgresql://company_db:5432/{os.getenv('COM_DB_NAME')}") \
             .option("dbtable", "nyc_taxi") \
             .option("user", os.getenv('COM_DB_USER')) \
             .option("password", os.getenv('COM_DB_PASSWORD')) \
@@ -132,7 +132,8 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
     print(f"Done! Inserted {total_rows} rows from {filepath}")
     return total_rows
 
-if __name__=='__main__':
+# produce manually
+def main():
     pg = PostgresConnection(port=5432)
     fs = s3fs.S3FileSystem()
     n_rows = 0
@@ -155,3 +156,33 @@ if __name__=='__main__':
             n_rows += n_new_rows
             print(f'\nTotal inserted: {n_rows}\n')
         time.sleep(10)
+
+# produce by Airflow schedule
+if __name__=='__main__':
+    # setup environment
+    pg = PostgresConnection(port=5432, host='company_db')
+    fs = s3fs.S3FileSystem()
+
+    data_dir = 's3://flezi-data/nyc-taxi/'
+    list_files = fs.listdir(data_dir)
+
+    with pg as conn:
+        create_table(conn)
+
+    spark = create_session()
+
+    # read the tracking file
+    with open('./tracking/track_produce_data', 'r') as fin:
+        parquet_files = fin.readlines()
+        fin.close()
+
+    target_file = parquet_files.pop(0).strip()
+    print(f'\n===== Process {target_file} =====\n')
+    filepath = os.path.join(data_dir, target_file).replace('s3', 's3a')
+    n_new_rows = insert_parquet(spark, filepath)
+    print(f'\nInserted: {n_new_rows} rows from {target_file}\n')
+
+    # write the rest back the file
+    with open('./tracking/track_produce_data', 'w') as fout:
+        fout.writelines(parquet_files)
+        fout.close()

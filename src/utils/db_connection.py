@@ -3,7 +3,7 @@ import psycopg2
 from psycopg2.extensions import connection
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv('.env_file/infra.env')
 
 class PostgresConnection:
     """Manages a connection to the PostgreSQL database."""

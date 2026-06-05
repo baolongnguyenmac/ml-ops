@@ -24,3 +24,9 @@ confluent-kafka[avro]
 # batch + stream
 pyspark
 apache-flink
+
+# airflow
+apache-airflow
+apache-airflow-providers-postgres
+airflow-provider-great-expectations
+apache-airflow-providers-docker

@@ -1,7 +1,7 @@
 services:
   company_db:
     # db of a company
-    image: postgres:latest
+    image: postgres:16
     command: ['postgres', '-c', 'wal_level=logical']
     container_name: ctn_com_db
     healthcheck:
@@ -48,7 +48,7 @@ services:
     ports:
       - 9083:9083
     env_file:
-      - .env
+      - .env_file/infra.env
     environment:
       - HIVE_METASTORE_JDBC_URL=${DL_METASTORE_JDBC_URL}
     depends_on:
@@ -62,7 +62,7 @@ services:
     ports:
       - 9084:9083
     env_file:
-      - .env
+      - .env_file/infra.env
     environment:
       - HIVE_METASTORE_JDBC_URL=${LH_METASTORE_JDBC_URL}
     depends_on:
@@ -74,12 +74,12 @@ services:
     container_name: ctn_trino
     hostname: trino
     ports:
-      - "8080:8080" # So client can read from here
+      - "8082:8080" # So client can read from here
     # environment:
     #   - S3_ACCESS_KEY=${S3_ACCESS_KEY}
     #   - S3_SECRET_KEY=${S3_SECRET_KEY}
     env_file:
-      - .env
+      - .env_file/infra.env
     volumes:
       - ./trino/etc:/usr/lib/trino/etc:ro
       - ./trino/catalog:/etc/trino/catalog:ro
@@ -103,7 +103,7 @@ services:
       retries: 20
       interval: 10s
     env_file:
-      - .env
+      - .env_file/infra.env
 
   # Kafka broker, each broker can be considered as a node
   broker:
@@ -122,7 +122,7 @@ services:
       timeout: 10s
       retries: 10
     env_file:
-      - .env
+      - .env_file/infra.env
 
   # Store Avro schemas for topics to ensure schema compatibility
   schema-registry:
@@ -138,7 +138,7 @@ services:
       retries: 20
       test: curl --user superUser:superUser --fail --silent --insecure http://localhost:8081/subjects --output /dev/null || exit 1
     env_file:
-      - .env
+      - .env_file/infra.env
 
   # CDC platform to capture changes in DB and stream them to Kafka
   debezium:
@@ -160,7 +160,7 @@ services:
     ports:
       - "8083:8083"
     env_file:
-      - .env
+      - .env_file/infra.env
 
   # Debezium UI
   debezium-ui:
@@ -173,7 +173,7 @@ services:
     ports:
       - '8088:8080'
     env_file:
-      - .env
+      - .env_file/infra.env
 
   control-center:
     image: confluentinc/cp-enterprise-control-center:7.5.0
@@ -193,7 +193,7 @@ services:
       timeout: 10s
       retries: 3
     env_file:
-      - .env
+      - .env_file/infra.env
 
   # ------------------------------------------------------------------------------------------------------------
   # Monitoring

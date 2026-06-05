@@ -139,6 +139,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+.env_file
 .env
 .envrc
 .venv
@@ -235,6 +236,7 @@ build/
 .cache
 *.cover
 *.log
+logs
 .coverage
 nosetests.xml
 coverage.xml
