@@ -100,7 +100,14 @@ map4 = {
 }
 
 map5 = {
-    'columns':  'vendor_id|pickup_datetime|dropoff_datetime|passenger_count|trip_distance|pickup_longitude|pickup_latitude|rate_code|store_and_fwd_flag|dropoff_longitude|dropoff_latitude|payment_type|fare_amount|surcharge|mta_tax|tip_amount|tolls_amount|total_amount',
+    'columns': 'vendor_id|pickup_datetime|dropoff_datetime|passenger_count|trip_distance|pickup_longitude|pickup_latitude|rate_code|store_and_fwd_flag|dropoff_longitude|dropoff_latitude|payment_type|fare_amount|surcharge|mta_tax|tip_amount|tolls_amount|total_amount',
+    'mapping': {
+        "rate_code": "rate_code_id",
+    }
+}
+
+map7 = {
+    'columns': 'vendor_id|pickup_datetime|dropoff_datetime|passenger_count|trip_distance|pickup_longitude|pickup_latitude|rate_code|store_and_fwd_flag|dropoff_longitude|dropoff_latitude|payment_type|fare_amount|surcharge|mta_tax|tip_amount|tolls_amount|total_amount|__index_level_0__',
     'mapping': {
         "rate_code": "rate_code_id",
     }
@@ -132,7 +139,7 @@ map6 = {
     }
 }
 
-SCHEMA_MAPPINGS = [map1, map2, map3, map4, map5, map6]
+SCHEMA_MAPPINGS = [map1, map2, map3, map4, map5, map6, map7]
 SPARK_DTYPES = {
     "object": StringType(),
     "float64": DoubleType(),

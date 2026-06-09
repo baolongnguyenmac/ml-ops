@@ -120,7 +120,7 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
         ''')
         tmp_df.drop('index').write \
             .format("jdbc") \
-            .option("url", f"jdbc:postgresql://company_db:5432/{os.getenv('COM_DB_NAME')}") \
+            .option("url", f"jdbc:postgresql://{os.getenv('COM_DB_HOST')}:5432/{os.getenv('COM_DB_NAME')}") \
             .option("dbtable", "nyc_taxi") \
             .option("user", os.getenv('COM_DB_USER')) \
             .option("password", os.getenv('COM_DB_PASSWORD')) \
@@ -160,7 +160,7 @@ def main():
 # produce by Airflow schedule
 if __name__=='__main__':
     # setup environment
-    pg = PostgresConnection(port=5432, host='company_db')
+    pg = PostgresConnection(port=5432, host=os.getenv('COM_DB_HOST'))
     fs = s3fs.S3FileSystem()
 
     data_dir = 's3://flezi-data/nyc-taxi/'

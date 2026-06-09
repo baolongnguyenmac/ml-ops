@@ -161,6 +161,8 @@ comm==0.2.3
     # via ipykernel
 confluent-kafka==2.14.0
     # via -r requirements.in
+contourpy==1.3.3
+    # via matplotlib
 cramjam==2.11.0
     # via fastparquet
 crcmod==1.7
@@ -175,6 +177,8 @@ cryptography==48.0.0
     #   authlib
     #   great-expectations
     #   joserfc
+cycler==0.12.1
+    # via matplotlib
 debugpy==1.8.20
     # via ipykernel
 decorator==5.3.1
@@ -221,6 +225,8 @@ fastparquet==2026.5.0
     # via -r requirements.in
 find-libpython==0.5.1
     # via pemja
+fonttools==4.63.0
+    # via matplotlib
 frozenlist==1.8.0
     # via
     #   aiohttp
@@ -320,6 +326,8 @@ jupyter-core==5.9.1
     # via
     #   ipykernel
     #   jupyter-client
+kiwisolver==1.5.0
+    # via matplotlib
 lazy-object-proxy==1.12.0
     # via apache-airflow-core
 libcst==1.8.6
@@ -340,6 +348,8 @@ markupsafe==3.0.3
     #   mako
 marshmallow==3.26.2
     # via great-expectations
+matplotlib==3.10.9
+    # via -r requirements.in
 matplotlib-inline==0.2.2
     # via
     #   ipykernel
@@ -367,7 +377,9 @@ multidict==6.7.1
     #   aiohttp
     #   yarl
 narwhals==2.22.0
-    # via altair
+    # via
+    #   altair
+    #   plotly
 natsort==8.4.0
     # via apache-airflow-core
 nest-asyncio==1.6.0
@@ -377,8 +389,10 @@ numpy==2.1.3
     #   -r requirements.in
     #   apache-beam
     #   apache-flink
+    #   contourpy
     #   fastparquet
     #   great-expectations
+    #   matplotlib
     #   pandas
     #   pyarrow
     #   scipy
@@ -427,6 +441,8 @@ packaging==26.2
     #   great-expectations
     #   ipykernel
     #   marshmallow
+    #   matplotlib
+    #   plotly
 pandas==2.2.3
     # via
     #   -r requirements.in
@@ -449,8 +465,12 @@ pendulum==3.2.0
     #   apache-airflow-task-sdk
 pexpect==4.9.0
     # via ipython
+pillow==12.2.0
+    # via matplotlib
 platformdirs==4.10.0
     # via jupyter-core
+plotly==6.8.0
+    # via -r requirements.in
 pluggy==1.6.0
     # via
     #   apache-airflow-core
@@ -536,6 +556,7 @@ pyparsing==3.3.2
     # via
     #   great-expectations
     #   httplib2
+    #   matplotlib
     #   pydot
 pyspark==4.1.2
     # via -r requirements.in
@@ -552,6 +573,7 @@ python-dateutil==2.9.0.post0
     #   croniter
     #   great-expectations
     #   jupyter-client
+    #   matplotlib
     #   pandas
     #   pendulum
 python-dotenv==1.2.2

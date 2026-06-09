@@ -8,6 +8,9 @@ INFRA_COMPOSE_CMD = docker compose --env-file .env_file/infra.env -f infra-docke
 up-a:
 	$(AIRFLOW_COMPOSE_CMD) up -d
 
+stop-a:
+	$(AIRFLOW_COMPOSE_CMD) stop
+
 down-a:
 	$(AIRFLOW_COMPOSE_CMD) down
 
@@ -19,6 +22,9 @@ restart-a:
 
 up-i:
 	$(INFRA_COMPOSE_CMD) up -d
+
+stop-i:
+	$(INFRA_COMPOSE_CMD) stop
 
 down-i:
 	$(INFRA_COMPOSE_CMD) down

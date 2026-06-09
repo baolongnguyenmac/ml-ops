@@ -6,6 +6,8 @@ pandas
 ipykernel
 dotenv
 psycopg2-binary
+plotly
+matplotlib
 
 # data lake + lake house
 minio
