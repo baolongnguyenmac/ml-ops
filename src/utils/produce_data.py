@@ -15,8 +15,15 @@ def create_session() -> SparkSession:
         SparkSession
         .builder
         .appName('produce data')
-        .config('spark.jars', './spark/jar/postgresql-42.7.11.jar')
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.4.2,software.amazon.awssdk:bundle:2.29.38")
+        # jar files supporting read/write postgres, S3
+        .config(
+            'spark.jars',
+            """
+                ./spark/jar/postgresql-42.7.11.jar,
+                ./spark/jar/hadoop-aws-3.4.2.jar,
+                ./spark/jar/bundle-2.29.52.jar
+            """
+        )
         .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
         .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
         .getOrCreate()
