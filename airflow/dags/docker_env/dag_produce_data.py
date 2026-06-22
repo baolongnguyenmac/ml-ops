@@ -15,26 +15,20 @@ with DAG(
     catchup=False,  # không backfill các run bị bỏ lỡ
 ) as dag:
     DockerOperator(
-        task_id='run_container',
+        task_id='utils.produce_data',
         api_version='auto',
         mount_tmp_dir=False,
 
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.0',
+        image='longnb32/spark_env:v1.1',
         container_name='ctn_produce_data',
         working_dir='/app',
         mounts=[
             Mount(
                 target='/app/src/utils',
                 source='/home/longnb32/FPT/ops/ml-ops/src/utils',
-                type='bind',
-                read_only=True
-            ),
-            Mount(
-                target='/app/spark',
-                source='/home/longnb32/FPT/ops/ml-ops/spark',
                 type='bind',
                 read_only=True
             ),
