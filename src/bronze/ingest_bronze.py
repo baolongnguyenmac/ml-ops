@@ -1,23 +1,25 @@
 from pyspark.sql import SparkSession
-import os
 import pyspark.sql.functions as F
 
-from datetime import datetime
+import os
 from dotenv import load_dotenv
-import argparse
+
+from utils.utils import check_date
+from bronze.valid_bronze import validate_bronze
 
 load_dotenv('.env_file/infra.env')
+load_dotenv('.env_file/app.env')
 
 S3_BRONZE_PATH = "s3a://flezi-data/bronze/"
 SCHEMA = "taxi_data"
 TABLE  = "nyc_taxi"
-SCHEMA_STORE = 'warehouse'
+SCHEMA_STORE = 'warehouse_bronze'
 
 def create_session() -> SparkSession:
     return (
         SparkSession.builder
         .appName('ingest data to bronze zone')
-        # jar files supporting read/write postgres, S3
+        # jar files supporting read/write postgres, S3, hive (data lake)
         .config(
             'spark.jars',
             """
@@ -64,7 +66,7 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
     )
 
     # create schema in trino
-    spark.sql('create database if not exists taxi_data')
+    spark.sql(f'create database if not exists {SCHEMA}')
 
     # save to data lake
     (
@@ -77,26 +79,12 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
     )
 
     print(f"Done. Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}")
-
     return str(df.select(F.max('pickup_datetime')).collect()[0][0])
 
 # trigger manually
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--lastRun", help="Previous batch job time")
-    args = parser.parse_args()
-
     spark = create_session()
-    ingest_bronze(spark, args.lastRun)
-
-def check_date(date_str:str) -> bool:
-    # check if the string is valid by converting to time
-    try:
-        datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-        return True
-    except ValueError as e:
-        print(f'[Ingest bronze] Expect string in timestamp but receive {date_str} - {e}')
-        return False
+    ingest_bronze(spark, '2000-01-01 00:00:00')
 
 # trigger via Airflow schedule
 if __name__=='__main__':
@@ -116,6 +104,9 @@ if __name__=='__main__':
             list_dates.insert(0, f'{current_last_date}\n')
             if len(list_dates) > 500:
                 list_dates.pop()
+
+            # test
+            validate_bronze(previous_last_date, current_last_date)
 
             # update current_last_date to the tracking file
             with open('./tracking/track_bronze', 'w') as fout:
