@@ -165,7 +165,7 @@ services:
   # Debezium UI
   debezium-ui:
     image: debezium/debezium-ui:latest
-    container_name: cnt_debezium_ui
+    container_name: ctn_debezium_ui
     hostname: debezium-ui
     depends_on:
       debezium:
@@ -177,7 +177,7 @@ services:
 
   control-center:
     image: confluentinc/cp-enterprise-control-center:7.5.0
-    container_name: cnt_control_center
+    container_name: ctn_control_center
     depends_on:
       broker:
         condition: service_healthy

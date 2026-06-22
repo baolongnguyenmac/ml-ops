@@ -183,6 +183,8 @@ debugpy==1.8.20
     # via ipykernel
 decorator==5.3.1
     # via ipython
+delta-spark==4.1.0
+    # via -r requirements.in
 deltalake==1.6.0
     # via -r requirements.in
 deprecated==1.3.1
@@ -284,6 +286,7 @@ importlib-metadata==9.0.0
     # via
     #   apache-airflow-core
     #   apache-airflow-task-sdk
+    #   delta-spark
 ipykernel==7.2.0
     # via -r requirements.in
 ipython==9.13.0
@@ -559,7 +562,9 @@ pyparsing==3.3.2
     #   matplotlib
     #   pydot
 pyspark==4.1.2
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   delta-spark
 python-daemon==3.1.2
     # via apache-airflow-core
 python-dateutil==2.9.0.post0
