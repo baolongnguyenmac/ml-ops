@@ -5,15 +5,15 @@ import os
 from dotenv import load_dotenv
 
 from utils.utils import check_date
-from bronze.valid_bronze import validate_bronze
+from bronze.valid_bronze import post_validate_bronze
 
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
 S3_BRONZE_PATH = "s3a://flezi-data/bronze/"
-SCHEMA = "taxi_data"
+SCHEMA = "bronze"
 TABLE  = "nyc_taxi"
-SCHEMA_STORE = 'warehouse_bronze'
+SCHEMA_STORE = 'warehouse'
 
 def create_session() -> SparkSession:
     return (
@@ -51,13 +51,20 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
         .load()
     )
 
-    # filter new records
-    df = df.filter(
-        df['pickup_datetime'] > previous_last_date
-    )
+    # limit for 3 months, avoid out of mem
+    df.createOrReplaceTempView('nyc_taxi')
+    df = spark.sql(f'''
+        select *
+        from nyc_taxi
+        where
+            (pickup_datetime > '{previous_last_date}')
+        order by pickup_datetime asc
+        limit {140_000*3};
+    ''').cache()  # cache to avoid re-reading from Postgres on each action
 
-    if df.count() == 0:
-        return previous_last_date
+    source_count = df.count()
+    if source_count == 0:
+        return previous_last_date, 0
 
     # partition by month
     month_partition_df = (
@@ -65,8 +72,17 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
         .withColumn('month', F.month('pickup_datetime'))
     )
 
+    # pre-test
+    try:
+        partition_count = month_partition_df.count()
+        assert source_count == partition_count
+    except Exception as e:
+        print(f'df.count() != month_partition_df.count() - {e}')
+        raise e
+
     # create schema in trino
     spark.sql(f'create database if not exists {SCHEMA}')
+    print(f'\nCreated {SCHEMA}\n')
 
     # save to data lake
     (
@@ -78,8 +94,8 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
         .saveAsTable(f"{SCHEMA}.{TABLE}")   # auto save metadata to Hive
     )
 
-    print(f"Done. Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}")
-    return str(df.select(F.max('pickup_datetime')).collect()[0][0])
+    print(f"\nTable registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}\nInserted {partition_count} rows\n")
+    return str(df.select(F.max('pickup_datetime')).collect()[0][0]), source_count
 
 # trigger manually
 def main():
@@ -97,7 +113,7 @@ if __name__=='__main__':
     if check_date(previous_last_date):
         print(f'\n=== Start ingest from {previous_last_date} ===\n')
         spark = create_session()
-        current_last_date = ingest_bronze(spark, previous_last_date)
+        current_last_date, ingested_count = ingest_bronze(spark, previous_last_date)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
             print(f'\n=== Last date: {current_last_date} ===\n')
@@ -105,10 +121,10 @@ if __name__=='__main__':
             if len(list_dates) > 500:
                 list_dates.pop()
 
-            # test
-            validate_bronze(previous_last_date, current_last_date)
-
             # update current_last_date to the tracking file
             with open('./tracking/track_bronze', 'w') as fout:
                 fout.writelines(list_dates)
                 fout.close()
+
+            # post-test
+            post_validate_bronze(spark, previous_last_date, current_last_date, ingested_count)

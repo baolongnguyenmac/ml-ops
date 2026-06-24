@@ -12,7 +12,7 @@ with DAG(
     dag_display_name='Ingest Bronze',
     description='Run Ingest Bronze via Airflow',
     start_date=datetime(2026,1,1),
-    schedule='*/5 * * * *',
+    schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
 ) as dag:
