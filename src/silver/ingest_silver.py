@@ -5,15 +5,16 @@ import os
 from dotenv import load_dotenv
 
 from silver.silver_map import payment_map, store_fwd_flag_map, vendor_id_map
+from silver.valid_silver import post_valid_silver
 from utils.utils import check_date
 
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
 S3_BRONZE_PATH = "s3a://flezi-data/silver/"
-SCHEMA = "taxi_data_silver"
+SCHEMA = "silver"
 TABLE  = "nyc_taxi"
-SCHEMA_STORE = 'warehouse_silver'
+SCHEMA_STORE = 'warehouse'
 
 def create_session() -> SparkSession:
     return (
@@ -37,6 +38,11 @@ def create_session() -> SparkSession:
                 ./spark/jar/delta-kernel-defaults-4.2.0.jar,
                 ./spark/jar/delta-storage-4.2.0.jar,
             """
+
+            # ./spark/jar/delta-spark_4.1_2.13-4.3.0.jar,
+            # ./spark/jar/delta-kernel-api-4.3.0.jar,
+            # ./spark/jar/delta-kernel-defaults-4.3.0.jar,
+            # ./spark/jar/delta-storage-4.3.0.jar,
         )
         # Hive metastore
         .config("spark.hadoop.hive.metastore.uris", f"thrift://{os.getenv('LH_METASTORE_HOST')}:9083")
@@ -51,7 +57,7 @@ def ingest_silver(spark:SparkSession, previous_last_date:str) -> str:
     trino_url = "jdbc:trino://trino:8080"
     trino_user = "trino"
     trino_password = ""
-    source_table = "datalake.taxi_data.nyc_taxi"
+    source_table = "datalake.bronze.nyc_taxi"
 
     df = (
         spark.read
@@ -65,13 +71,19 @@ def ingest_silver(spark:SparkSession, previous_last_date:str) -> str:
         .load()
     )
 
-    # filter new records
-    df = df.filter(
-        df['pickup_datetime'] > previous_last_date
-    )
+    # limit for 3 months, avoid out of mem
+    df.createOrReplaceTempView('nyc_taxi')
+    df = spark.sql(f'''
+        select *
+        from nyc_taxi
+        where
+            (pickup_datetime > '{previous_last_date}')
+        order by pickup_datetime asc
+        limit {140_000*3};
+    ''').cache()  # cache to avoid re-reading from Trino on each action
 
     if df.count() == 0:
-        return previous_last_date
+        return previous_last_date, 0
 
     # transfer: cast some columns, replace data within some columns
     cast_map = {
@@ -96,24 +108,31 @@ def ingest_silver(spark:SparkSession, previous_last_date:str) -> str:
         .replace(vendor_id_map, subset='vendor_id')
     )
 
+    # de-dup
+    df = (
+        df
+        .dropDuplicates()
+    )
+
     # create schema in trino
     spark.sql(f'create database if not exists {SCHEMA}')
+    print(f'\nCreated {SCHEMA}\n')
 
     # save to lake house
-    table_exists = spark.catalog.tableExists(f"{SCHEMA}.{TABLE}")
-    writer = (
+    (
         df
+        .repartition("year", "month")
         .write
         .format('delta')
+        .partitionBy("year", "month")
         .mode("append")
         .option("path", S3_BRONZE_PATH)
+        .saveAsTable(f"{SCHEMA}.{TABLE}")   # đăng ký luôn với Hive metastore
     )
-    if not table_exists:
-        writer = writer.partitionBy("year", "month")
-    writer.saveAsTable(f"{SCHEMA}.{TABLE}")   # đăng ký luôn với Hive metastore
 
-    print(f"Done. Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}")
-    return str(df.select(F.max('pickup_datetime')).collect()[0][0])
+    ingested_count = df.count()
+    print(f"Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}\nInserted {ingested_count} rows")
+    return str(df.select(F.max('pickup_datetime')).collect()[0][0]), ingested_count
 
 # trigger manually
 def main():
@@ -130,7 +149,7 @@ if __name__=='__main__':
     if check_date(previous_last_date):
         print(f'\n=== Start ingest from {previous_last_date} ===\n')
         spark = create_session()
-        current_last_date = ingest_silver(spark, previous_last_date)
+        current_last_date, ingested_count = ingest_silver(spark, previous_last_date)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
             print(f'\n=== Last date: {current_last_date} ===\n')
@@ -142,3 +161,6 @@ if __name__=='__main__':
             with open('./tracking/track_silver', 'w') as fout:
                 fout.writelines(list_dates)
                 fout.close()
+
+            # post-test
+            post_valid_silver(spark, previous_last_date, current_last_date, ingested_count)
