@@ -26,21 +26,6 @@ services:
   # DataLake & LakeHouse
   # ------------------------------------------------------------------------------------------------------------
 
-  # minio:
-  #   # serve as data lake and lake house
-  #   image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
-  #   container_name: ctn_obj_storage
-  #   hostname: minio
-  #   ports:
-  #     - "9099:9000"
-  #     - "9098:9001" # expose để upload data lên (dùng SDK)
-  #   volumes:
-  #     - minio_storage:/data
-  #   environment:
-  #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-  #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-  #   command: server --console-address ":9001" /data
-
   dl-metastore:
     image: 'starburstdata/hive:3.1.3-e.15'
     container_name: ctn_dl_hive
