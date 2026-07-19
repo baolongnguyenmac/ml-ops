@@ -57,7 +57,9 @@ def create_table(conn):
         total_amount            FLOAT,
         congestion_surcharge    FLOAT,
         airport_fee             FLOAT,
-        cbd_congestion_fee      FLOAT
+        cbd_congestion_fee      FLOAT,
+        source_file             TEXT,
+        source_created_datetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     """
     with conn.cursor() as cur:
@@ -107,6 +109,7 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
     # sample n rows
     fraction = min(n/df.count(), 1)
     df = transform_data(df.sample(fraction=fraction, seed=42))
+    df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
 
     # sort by pickup_datetime
     window_spec = Window.orderBy('pickup_datetime')
