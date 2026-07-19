@@ -33,11 +33,11 @@ RUN mkdir -p /app/spark/jar && \
         https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/2.29.52/bundle-2.29.52.jar && \
     curl -fSL -o /app/spark/jar/trino-jdbc-480.jar \
         https://repo1.maven.org/maven2/io/trino/trino-jdbc/480/trino-jdbc-480.jar && \
-    curl -fSL -o /app/spark/jar/delta-spark_4.1_2.13-4.2.0.jar \
-        https://repo1.maven.org/maven2/io/delta/delta-spark_4.1_2.13/4.2.0/delta-spark_4.1_2.13-4.2.0.jar && \
-    curl -fSL -o /app/spark/jar/delta-storage-4.2.0.jar \
-        https://repo1.maven.org/maven2/io/delta/delta-storage/4.2.0/delta-storage-4.2.0.jar && \
-    curl -fSL -o /app/spark/jar/delta-kernel-api-4.2.0.jar \
-        https://repo1.maven.org/maven2/io/delta/delta-kernel-api/4.2.0/delta-kernel-api-4.2.0.jar && \
-    curl -fSL -o /app/spark/jar/delta-kernel-defaults-4.2.0.jar \
-        https://repo1.maven.org/maven2/io/delta/delta-kernel-defaults/4.2.0/delta-kernel-defaults-4.2.0.jar
+    curl -fSL -o /app/spark/jar/delta-spark_4.1_2.13-4.3.0.jar \
+        https://repo1.maven.org/maven2/io/delta/delta-spark_4.1_2.13/4.3.0/delta-spark_4.1_2.13-4.3.0.jar && \
+    curl -fSL -o /app/spark/jar/delta-storage-4.3.0.jar \
+        https://repo1.maven.org/maven2/io/delta/delta-storage/4.3.0/delta-storage-4.3.0.jar && \
+    curl -fSL -o /app/spark/jar/delta-kernel-api-4.3.0.jar \
+        https://repo1.maven.org/maven2/io/delta/delta-kernel-api/4.3.0/delta-kernel-api-4.3.0.jar && \
+    curl -fSL -o /app/spark/jar/delta-kernel-defaults-4.3.0.jar \
+        https://repo1.maven.org/maven2/io/delta/delta-kernel-defaults/4.3.0/delta-kernel-defaults-4.3.0.jar

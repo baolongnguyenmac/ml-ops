@@ -26,7 +26,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.1',
+        image='longnb32/spark_env:v1.2',
         container_name='ctn_ingest_silver',
         working_dir='/app',
         mounts=[
