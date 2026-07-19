@@ -3,6 +3,7 @@ import pyspark.sql.functions as F
 
 import os
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 from utils.utils import check_date
 from bronze.valid_bronze import post_validate_bronze
@@ -19,6 +20,9 @@ def create_session() -> SparkSession:
     return (
         SparkSession.builder
         .appName('ingest data to bronze zone')
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
+        .config("spark.sql.session.timeZone", "UTC")
         # jar files supporting read/write postgres, S3, hive (data lake)
         .config(
             'spark.jars',
@@ -39,7 +43,16 @@ def create_session() -> SparkSession:
         .getOrCreate()
     )
 
-def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
+def ingest_bronze(spark: SparkSession, watermark:str) -> str:
+    """Ingest data from source to bronze zone
+
+    Args:
+        spark (SparkSession): SparkSession which can access to DB and Data lake
+        watermark (str): Latest `source_created_datetime` in DB
+
+    Returns:
+        str: New watermark
+    """
     # load data from db
     df = (
         spark.read.format("jdbc")
@@ -54,39 +67,37 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
     # limit for 3 months, avoid out of mem
     df.createOrReplaceTempView('nyc_taxi')
     df = spark.sql(f'''
-        select *
-        from nyc_taxi
-        where
-            (pickup_datetime > '{previous_last_date}')
-        order by pickup_datetime asc
-        limit {140_000*3};
+        select * from nyc_taxi
+        where source_created_datetime <= (
+            select max(source_created_datetime)
+            from (
+                select * from nyc_taxi
+                where source_created_datetime > timestamp '{watermark}'
+                order by source_created_datetime asc
+                limit {140_000*3}
+            )
+        ) and source_created_datetime > timestamp '{watermark}';
     ''').cache()  # cache to avoid re-reading from Postgres on each action
 
     source_count = df.count()
     if source_count == 0:
-        return previous_last_date, 0
+        return watermark, 0
 
     # partition by month
     month_partition_df = (
-        df.withColumn('year', F.year('pickup_datetime'))
+        df
+        .withColumn('year', F.year('pickup_datetime'))
         .withColumn('month', F.month('pickup_datetime'))
     )
-
-    # pre-test
-    try:
-        partition_count = month_partition_df.count()
-        assert source_count == partition_count
-    except Exception as e:
-        print(f'df.count() != month_partition_df.count() - {e}')
-        raise e
 
     # create schema in trino
     spark.sql(f'create database if not exists {SCHEMA}')
     print(f'\nCreated {SCHEMA}\n')
 
     # save to data lake
+    batch_timestamp = datetime.now(timezone.utc)
     (
-        month_partition_df
+        month_partition_df.withColumn('bronze_created_datetime', F.lit(batch_timestamp).cast('timestamp'))
         .write
         .partitionBy("year", "month")
         .mode("append")
@@ -94,13 +105,16 @@ def ingest_bronze(spark: SparkSession, previous_last_date:str) -> str:
         .saveAsTable(f"{SCHEMA}.{TABLE}")   # auto save metadata to Hive
     )
 
-    print(f"\nTable registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}\nInserted {partition_count} rows\n")
-    return str(df.select(F.max('pickup_datetime')).collect()[0][0]), source_count
+    print(f"""
+Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}
+\tInserted {source_count} rows\n
+""")
+    return str(df.select(F.max('source_created_datetime')).collect()[0][0]), source_count, str(batch_timestamp).split('+')[0]
 
 # trigger manually
 def main():
     spark = create_session()
-    ingest_bronze(spark, '2000-01-01 00:00:00')
+    print(ingest_bronze(spark, '2000-01-01 00:00:00.0'))
 
 # trigger via Airflow schedule
 if __name__=='__main__':
@@ -113,7 +127,7 @@ if __name__=='__main__':
     if check_date(previous_last_date):
         print(f'\n=== Start ingest from {previous_last_date} ===\n')
         spark = create_session()
-        current_last_date, ingested_count = ingest_bronze(spark, previous_last_date)
+        current_last_date, ingested_count, bronze_created_datetime = ingest_bronze(spark, previous_last_date)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
             print(f'\n=== Last date: {current_last_date} ===\n')
@@ -127,4 +141,4 @@ if __name__=='__main__':
                 fout.close()
 
             # post-test
-            post_validate_bronze(spark, previous_last_date, current_last_date, ingested_count)
+            post_validate_bronze(spark, bronze_created_datetime, ingested_count)
