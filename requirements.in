@@ -24,8 +24,8 @@ avro
 confluent-kafka[avro]
 
 # batch + stream
-pyspark
-delta-spark
+pyspark==4.1.1
+delta-spark==4.3.0
 apache-flink
 
 # airflow

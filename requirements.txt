@@ -183,7 +183,7 @@ debugpy==1.8.20
     # via ipykernel
 decorator==5.3.1
     # via ipython
-delta-spark==4.1.0
+delta-spark==4.3.0
     # via -r requirements.in
 deltalake==1.6.0
     # via -r requirements.in
@@ -282,7 +282,7 @@ idna==3.17
     #   httpx
     #   requests
     #   yarl
-importlib-metadata==9.0.0
+importlib-metadata==8.7.1
     # via
     #   apache-airflow-core
     #   apache-airflow-task-sdk
@@ -561,7 +561,7 @@ pyparsing==3.3.2
     #   httplib2
     #   matplotlib
     #   pydot
-pyspark==4.1.2
+pyspark==4.1.1
     # via
     #   -r requirements.in
     #   delta-spark
