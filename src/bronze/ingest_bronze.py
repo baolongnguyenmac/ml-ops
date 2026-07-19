@@ -81,7 +81,7 @@ def ingest_bronze(spark: SparkSession, watermark:str) -> str:
 
     source_count = df.count()
     if source_count == 0:
-        return watermark, 0
+        return watermark, 0, None
 
     # partition by month
     month_partition_df = (
@@ -141,4 +141,5 @@ if __name__=='__main__':
                 fout.close()
 
             # post-test
-            post_validate_bronze(spark, bronze_created_datetime, ingested_count)
+            if ingested_count != 0:
+                post_validate_bronze(spark, bronze_created_datetime, ingested_count)
