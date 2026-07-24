@@ -1,13 +1,14 @@
-from pyspark.sql import SparkSession, DataFrame, Window
-from pyspark.sql import functions as F
-import s3fs
-import time
 import os
+import time
+
+import s3fs
+from dotenv import load_dotenv
+from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql import functions as F
 
 from utils.db_connection import PostgresConnection
 from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS, SPARK_DTYPES
 
-from dotenv import load_dotenv
 load_dotenv('.env_file/infra.env')
 
 def create_session() -> SparkSession:
@@ -15,6 +16,9 @@ def create_session() -> SparkSession:
         SparkSession
         .builder
         .appName('produce data')
+        # support read timestamp with resolution in nano-second (file 2020-01 has its timestamp following this resolution)
+        # https://stackoverflow.com/questions/57699926/how-to-fix-illegal-parquet-type-int64-timestamp-micros-error
+        .config("spark.sql.legacy.parquet.nanosAsLong", "true")
         # jar files supporting read/write postgres, S3
         .config(
             'spark.jars',
@@ -107,7 +111,7 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
     )
 
     # sample n rows
-    fraction = min(n/df.count(), 1)
+    fraction = min(n/df.count(), 1.0)
     df = transform_data(df.sample(fraction=fraction, seed=42))
     df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
 
