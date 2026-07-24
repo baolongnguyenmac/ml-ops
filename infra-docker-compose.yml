@@ -19,7 +19,7 @@ services:
       - POSTGRES_USER=${COM_DB_USER}
       - POSTGRES_PASSWORD=${COM_DB_PASSWORD}
     volumes: 
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
       - com_db:/var/lib/postgresql
 
   # ------------------------------------------------------------------------------------------------------------
