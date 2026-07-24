@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
 
+
 def post_valid_silver(spark:SparkSession, audit_timestamp:str, expected_count:int):
     silver_table = 'silver.nyc_taxi'
     df_silver = spark.read.table(silver_table)

@@ -1,4 +1,4 @@
-from pyspark.sql.types import StringType, DoubleType, TimestampType
+from pyspark.sql.types import DoubleType, StringType, TimestampType
 
 LIST_COLS = [
     "vendor_id", "pickup_datetime", "dropoff_datetime", "passenger_count",

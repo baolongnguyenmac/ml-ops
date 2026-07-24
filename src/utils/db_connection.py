@@ -1,7 +1,8 @@
 import os
+
 import psycopg2
-from psycopg2.extensions import connection
 from dotenv import load_dotenv
+from psycopg2.extensions import connection
 
 load_dotenv('.env_file/infra.env')
 

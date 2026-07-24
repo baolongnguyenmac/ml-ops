@@ -1,5 +1,6 @@
 import os
 import time
+
 import requests
 
 RE_TRIAL = 3
@@ -24,8 +25,7 @@ def download(start_year: int, end_year: int, data_dir: str):
                     resp = requests.get(url, stream=True, timeout=30)
                     resp.raise_for_status()
                     with open(out_path, "wb") as f:
-                        for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
-                            f.write(chunk)
+                        f.writelines(resp.iter_content(chunk_size=8 * 1024 * 1024))
                     print(f"  -> saved to {out_path}\n")
                     break
                 except Exception as e:
