@@ -5,12 +5,31 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Module",
+            "name": "ingest silver",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "silver.ingest_silver",
+            "env": {
+                "PYTHONPATH": "./src"
+            },
+        },
+        {
+            "name": "data process",
             "type": "debugpy",
             "request": "launch",
             "module": "eda.data_preprocessor",
             "env": {
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            // "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "ingest bronze",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "bronze.ingest_bronze",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
             },
             // "cwd": "${workspaceFolder}"
         }
