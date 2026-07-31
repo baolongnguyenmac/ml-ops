@@ -1,9 +1,9 @@
-from airflow.sdk import DAG, Asset
-from airflow.providers.docker.operators.docker import DockerOperator
-from docker.types import Mount
-from airflow.models import Variable
+from datetime import datetime, timezone
 
-from datetime import datetime
+from airflow.models import Variable
+from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.sdk import DAG, Asset
+from docker.types import Mount
 
 bronze_asset = Asset("s3://flezi-data/bronze/")
 silver_asset = Asset("s3://flezi-data/silver/")
@@ -12,7 +12,7 @@ with DAG(
     dag_id='ingest_silver',
     dag_display_name='Ingest Silver',
     description='Run Ingest Silver via Airflow',
-    start_date=datetime(2026,1,1),
+    start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     schedule=[bronze_asset],
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ

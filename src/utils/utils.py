@@ -1,10 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def check_date(date_str:str) -> bool:
     # check if the string is valid by converting to time
     try:
-        datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S.%f")
+        datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S.%f%z")
         return True
-    except ValueError as e:
-        raise f'[check_date] Expect string in timestamp but receive {date_str} - {e}'
+    except ValueError:
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S.%f").astimezone(timezone.utc)
+            return True
+        except ValueError as e:
+            raise f'[check_date] Expect string in timestamp but receive {date_str} - {e}'

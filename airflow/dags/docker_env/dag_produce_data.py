@@ -1,15 +1,15 @@
-from airflow.sdk import DAG
-from airflow.providers.docker.operators.docker import DockerOperator
-from docker.types import Mount
-from airflow.models import Variable
+from datetime import datetime, timezone
 
-from datetime import datetime
+from airflow.models import Variable
+from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.sdk import DAG
+from docker.types import Mount
 
 with DAG(
     dag_id='produce_data',
     dag_display_name='Produce Data',
     description='Run Produce data via Airflow',
-    start_date=datetime(2026,1,1),
+    start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ

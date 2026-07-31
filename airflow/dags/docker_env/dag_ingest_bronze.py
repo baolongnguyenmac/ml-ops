@@ -1,9 +1,9 @@
-from airflow.sdk import DAG, Asset
-from airflow.providers.docker.operators.docker import DockerOperator
-from docker.types import Mount
-from airflow.models import Variable
+from datetime import datetime, timezone
 
-from datetime import datetime
+from airflow.models import Variable
+from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.sdk import DAG, Asset
+from docker.types import Mount
 
 bronze_asset = Asset("s3://flezi-data/bronze/")
 
@@ -11,7 +11,7 @@ with DAG(
     dag_id='ingest_bronze',
     dag_display_name='Ingest Bronze',
     description='Run Ingest Bronze via Airflow',
-    start_date=datetime(2026,1,1),
+    start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
@@ -51,7 +51,8 @@ with DAG(
             "COM_DB_PASSWORD": Variable.get("COM_DB_PASSWORD"),
             "COM_DB_NAME": Variable.get("COM_DB_NAME"),
 
-            "DL_METASTORE_HOST": Variable.get("DL_METASTORE_HOST"),
+            # "DL_METASTORE_HOST": Variable.get("DL_METASTORE_HOST"),
+            "LH_METASTORE_HOST": Variable.get("LH_METASTORE_HOST"),
 
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
