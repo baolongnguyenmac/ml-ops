@@ -97,8 +97,13 @@ def transform_data(df: DataFrame) -> DataFrame:
 
     # 3. Cast dtype
     for col, dtype in LIST_DTYPES.items():
-        spark_type = SPARK_DTYPES[dtype]
-        df = df.withColumn(col, F.col(col).cast(spark_type))
+        if 'datetime' in col and df.select(col).dtypes[0][1]=='bigint':
+            # convert from nano-second to datetime
+            # ref: https://stackoverflow.com/questions/72871432/convert-nanosecond-value-into-datetime-using-pyspark-in-databricks
+            df = df.withColumn(col, F.from_unixtime(F.col(col)/1000000000))
+        else:
+            spark_type = SPARK_DTYPES[dtype]
+            df = df.withColumn(col, F.col(col).cast(spark_type))
 
     # 4. Chỉ giữ các cột canonical
     return df.select(LIST_COLS)
