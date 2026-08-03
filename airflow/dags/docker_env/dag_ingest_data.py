@@ -85,12 +85,6 @@ with DAG(
             "AWS_ACCESS_KEY_ID": Variable.get("AWS_ACCESS_KEY_ID"),
             "AWS_SECRET_ACCESS_KEY": Variable.get("AWS_SECRET_ACCESS_KEY"),
 
-            "COM_DB_HOST": Variable.get("COM_DB_HOST"),
-            "COM_DB_PORT": Variable.get("COM_DB_PORT"),
-            "COM_DB_USER": Variable.get("COM_DB_USER"),
-            "COM_DB_PASSWORD": Variable.get("COM_DB_PASSWORD"),
-            "COM_DB_NAME": Variable.get("COM_DB_NAME"),
-
             "LH_METASTORE_HOST": Variable.get("LH_METASTORE_HOST"),
 
             "PYTHONPATH": '/app/src',

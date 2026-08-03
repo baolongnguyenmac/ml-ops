@@ -7,7 +7,7 @@ services:
     healthcheck:
       test: [
         'CMD-SHELL',
-        'psql -U ${COM_DB_USER} -d ${COM_DB_NAME} -c "SELECT 1" && psql -U ${COM_DB_USER} -d ${COM_META_BRONZE_DB_NAME} -c "SELECT 1" && psql -U ${COM_DB_USER} -d ${COM_META_SILVER_DB_NAME} -c "SELECT 1" && psql -U ${COM_DB_USER} -d ${COM_GOLD_DB_NAME} -c "SELECT 1"'
+        'psql -U ${COM_DB_USER} -d ${COM_DB_NAME} -c "SELECT 1" && psql -U ${COM_DB_USER} -d ${COM_META_DB_NAME} -c "SELECT 1" && psql -U ${COM_DB_USER} -d ${COM_GOLD_DB_NAME} -c "SELECT 1"'
       ]
       interval: 10s
       timeout: 5s
@@ -70,7 +70,7 @@ services:
       - ./trino/catalog:/etc/trino/catalog:ro
     depends_on:
       - lh-metastore
-      - dl-metastore
+      # - dl-metastore
 
   # ------------------------------------------------------------------------------------------------------------
   # CDC

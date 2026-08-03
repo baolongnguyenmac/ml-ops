@@ -1,11 +1,14 @@
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F, types as T
-from delta.tables import DeltaTable
-
 import os
-from dotenv import load_dotenv
 from datetime import datetime, timezone
 
+from delta.tables import DeltaTable
+from dotenv import load_dotenv
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+from bronze.ingest_bronze import SCHEMA as BRONZE_SCHEMA
+from bronze.ingest_bronze import TABLE as BRONZE_TABLE
 from silver.silver_map import payment_map, store_fwd_flag_map, vendor_id_map
 from silver.valid_silver import post_valid_silver
 from utils.utils import check_date
@@ -48,6 +51,7 @@ def create_session() -> SparkSession:
         )
         # Hive metastore
         .config("spark.hadoop.hive.metastore.uris", f"thrift://{os.getenv('LH_METASTORE_HOST')}:9083")
+        # .config("spark.hadoop.hive.metastore.uris", fthrift://localhost:9084")
         .config("spark.sql.catalogImplementation", "hive")
         # create schema using spark (instead of using trino)
         .config("spark.sql.warehouse.dir", f"s3a://flezi-data/{SCHEMA_STORE}/")
@@ -56,41 +60,12 @@ def create_session() -> SparkSession:
     )
 
 def ingest_silver(spark:SparkSession, watermark:str) -> str:
-    trino_url = "jdbc:trino://trino:8080"
-    trino_user = "trino"
-    trino_password = ""
-    source_table = "datalake.bronze.nyc_taxi"
-
-    df = (
-        spark.read
-        .option("pushDownPredicate", "false")
-        .format("jdbc")
-        .option("url", trino_url)
-        .option("driver", "io.trino.jdbc.TrinoDriver")
-        .option("dbtable", source_table)
-        .option("user", trino_user)
-        .option("password", trino_password)
-        .load()
-    )
-
+    df = spark.read.table(f'{BRONZE_SCHEMA}.{BRONZE_TABLE}')
     df.createOrReplaceTempView('nyc_taxi')
-
-    # limit for 3 months, avoid out of mem
-    # ban đầu chỉ định lấy 140_000*3 rows
-    # nhưng có thể có TH ngày created mới nhất trong đó có nhiều giá trị (và chưa được lấy vào vì limit 140_000)
-    # nên phải lấy toàn toàn bộ các rows > watermark và <= ngày lớn nhất trong mớ 140_000*3 rows định lấy ban đầu
     df = spark.sql(f'''
         select * from nyc_taxi
-        where bronze_created_datetime <= (
-            select max(bronze_created_datetime)
-            from (
-                select * from nyc_taxi
-                where bronze_created_datetime > timestamp '{watermark}'
-                order by bronze_created_datetime asc
-                limit {140_000*3}
-            )
-        ) and bronze_created_datetime > timestamp '{watermark}';
-    ''').cache()  # cache to avoid re-reading from Trino on each action
+        where bronze_created_datetime > timestamp '{watermark}';
+    ''')
 
     if df.count() == 0:
         return watermark, 0, None
@@ -123,7 +98,7 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
         'trip_key',
         F.sha2(F.concat_ws(
             "||",
-            "pickup_datetime", "dropoff_datetime", "passenger_count", "trip_distance", "pickup_longitude", "pickup_latitude", "dropoff_longitude", "dropoff_latitude"
+            *df.columns
         ), 256)
     )
 
@@ -154,19 +129,26 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
         # những row thoả điều kiện sẽ có updated_datetime mới (ít nhất là vậy)
         # những row không thoả điều kiện sẽ được insert
         # điều này dẫn đến logic khi test
+        partitions = df.select("year", "month", "day", "hour", "minute").distinct().collect()
+        partition_filter = " or ".join([
+            f"(target.year={r['year']} and target.month={r['month']} and target.day={r['day']} and target.hour={r['hour']} and target.minute={r['minute']})"
+            for r in partitions
+        ])
         delta_table = DeltaTable.forName(spark, table_full_name)
         target_before_count = delta_table.toDF().count()
         (
             delta_table.alias("target")
             .merge(
-                df.alias("source"),
-                "target.trip_key = source.trip_key"
+                source=df.alias("source"),
+                condition=f"({partition_filter}) and (target.trip_key = source.trip_key)"
             )
-            .whenMatchedUpdate(set={
-                col: f"source.{col}"
-                for col in df.columns
-                if col != "silver_created_datetime"
-            })
+            .whenMatchedUpdate(
+                set={
+                    col: f"source.{col}"
+                    for col in df.columns
+                    if col != "silver_created_datetime"
+                }
+            )
             .whenNotMatchedInsertAll()
             .execute()
         )
@@ -181,10 +163,11 @@ Table registered as '{table_full_name}' → {S3_SILVER_PATH}
         # save to lake house
         (
             df
-            .repartition("year", "month")
+            .repartition("year", "month", "day", "hour", "minute") # prevend small files problem
             .write
+            .option("delta.enableDeletionVectors", "true") # have deletion vectors on
             .format('delta')
-            .partitionBy("year", "month")
+            .partitionBy("year", "month", "day", "hour", "minute")
             .mode("append")
             .option("path", S3_SILVER_PATH)
             .saveAsTable(table_full_name)   # đăng ký luôn với Hive metastore
@@ -195,7 +178,7 @@ Table registered as '{table_full_name}' → {S3_SILVER_PATH}
 \tInserted {source_count} rows
 """)
 
-    return str(df.select(F.max('bronze_created_datetime')).collect()[0][0]), source_count, str(batch_timestamp).split('+')[0]
+    return str(df.select(F.max('bronze_created_datetime')).collect()[0][0]), source_count, str(batch_timestamp)
 
 # trigger manually
 def main():
@@ -212,12 +195,12 @@ if __name__=='__main__':
         fi.close()
 
     if check_date(previous_last_date):
-        print(f'\n=== Start ingest from {previous_last_date} ===\n')
+        print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_last_date} ===\n')
         spark = create_session()
         current_last_date, ingested_count, silver_updated_datetime = ingest_silver(spark, previous_last_date)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
-            print(f'\n=== Last date: {current_last_date} ===\n')
+            print(f'\n=== New bronze_created_datetime (watermark): {current_last_date} ===\n')
             list_dates.insert(0, f'{current_last_date}\n')
             if len(list_dates) > 500:
                 list_dates.pop()

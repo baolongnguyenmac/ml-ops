@@ -23,20 +23,30 @@ def create_session() -> SparkSession:
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .config("spark.sql.session.timeZone", "UTC")
+        # workaround for Spark 4.1.x CollapseProject optimizer bug
+        .config("spark.sql.optimizer.excludedRules", "org.apache.spark.sql.catalyst.optimizer.CollapseProject")
+        # delta lake support
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        # read/write S3
+        .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
+        .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
         # jar files supporting read/write postgres, S3, hive (data lake)
         .config(
             'spark.jars',
             """
                 ./spark/jar/postgresql-42.7.11.jar,
                 ./spark/jar/hadoop-aws-3.4.2.jar,
-                ./spark/jar/bundle-2.29.52.jar
+                ./spark/jar/bundle-2.29.52.jar,
+                ./spark/jar/delta-spark_4.1_2.13-4.3.0.jar,
+                ./spark/jar/delta-kernel-api-4.3.0.jar,
+                ./spark/jar/delta-kernel-defaults-4.3.0.jar,
+                ./spark/jar/delta-storage-4.3.0.jar,
             """
         )
-        .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
-        .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
         # Hive metastore
         .config("spark.hadoop.hive.metastore.uris", f"thrift://{os.getenv('LH_METASTORE_HOST')}:9083")
-        # .config("spark.hadoop.hive.metastore.uris", "thrift://localhost:9084")
+        # .config("spark.hadoop.hive.metastore.uris", "thrift://localhost:9083")
         .config("spark.sql.catalogImplementation", "hive")
         # create schema using spark (instead of using trino)
         .config("spark.sql.warehouse.dir", f"s3a://flezi-data/{SCHEMA_STORE}/")
@@ -98,23 +108,26 @@ def ingest_bronze(spark: SparkSession, watermark:str) -> str:
         .withColumn('bronze_created_datetime', F.lit(bronze_created_datetime).cast('timestamp'))
         .withColumn('year', F.year('bronze_created_datetime'))
         .withColumn('month', F.month('bronze_created_datetime'))
-        .withColumn('day', F.month('bronze_created_datetime'))
-        .withColumn('hour', F.month('bronze_created_datetime'))
-        .withColumn('minute', F.month('bronze_created_datetime')) # since my jobs run every 2 mins
+        .withColumn('day', F.day('bronze_created_datetime'))
+        .withColumn('hour', F.hour('bronze_created_datetime'))
+        .withColumn('minute', F.minute('bronze_created_datetime')) # since my jobs run every 2 mins
     )
 
     # create schema in trino
     spark.sql(f'create database if not exists {SCHEMA}')
     print(f'\nCreated {SCHEMA}\n')
 
-    # save to data lake
+    # save to lakehouse
     (
         minute_partition_df
+        .repartition("year", "month", "day", "hour", "minute") # prevend small files problem
         .write
+        .option("delta.enableDeletionVectors", "true") # have deletion vectors on
+        .format('delta')
         .partitionBy("year", "month", "day", "hour", "minute")
         .mode("append")
         .option("path", S3_BRONZE_PATH)
-        .saveAsTable(f"{SCHEMA}.{TABLE}")   # auto save metadata to Hive
+        .saveAsTable(f'{SCHEMA}.{TABLE}')   # đăng ký luôn với Hive metastore
     )
 
     print(f"""
