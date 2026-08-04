@@ -10,6 +10,7 @@ from utils.db_connection import PostgresConnection
 from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS, SPARK_DTYPES
 
 load_dotenv('.env_file/infra.env')
+load_dotenv('.env_file/app.env')
 
 def create_session() -> SparkSession:
     return (
@@ -120,36 +121,20 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
     df = transform_data(df.sample(fraction=fraction, seed=42))
     df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
 
-    # sort by pickup_datetime
-    window_spec = Window.orderBy('pickup_datetime')
-    df = df.withColumn('index', F.row_number().over(window_spec) - 1)
-    df.createOrReplaceTempView('nyc_taxi')
-
     # insert to db
-    total_rows = df.count()
-    for i in range(0, total_rows, batch_size):
-        start_index = i
-        end_index = min(i+batch_size, total_rows)
-        print(f'\tProcess from {start_index} to {end_index}')
-
-        tmp_df = spark.sql(f'''
-            select *
-            from nyc_taxi
-            where (nyc_taxi.index >= {start_index}) and (nyc_taxi.index < {end_index})
-        ''')
-        tmp_df.drop('index').write \
-            .format("jdbc") \
-            .option("url", f"jdbc:postgresql://{os.getenv('COM_DB_HOST')}:5432/{os.getenv('COM_DB_NAME')}") \
-            .option("dbtable", "nyc_taxi") \
-            .option("user", os.getenv('COM_DB_USER')) \
-            .option("password", os.getenv('COM_DB_PASSWORD')) \
-            .option("driver", "org.postgresql.Driver") \
-            .mode("append") \
-            .save()
-        time.sleep(interval)
-
-    print(f"Done! Inserted {total_rows} rows from {filepath}")
-    return total_rows
+    (
+        df.write
+        .format("jdbc")
+        .option("url", f"jdbc:postgresql://{os.getenv('COM_DB_HOST')}:5432/{os.getenv('COM_DB_NAME')}")
+        # .option("url", f"jdbc:postgresql://localhost:5432/{os.getenv('COM_DB_NAME')}")
+        .option("dbtable", "nyc_taxi")
+        .option("user", os.getenv('COM_DB_USER'))
+        .option("password", os.getenv('COM_DB_PASSWORD'))
+        .option("driver", "org.postgresql.Driver")
+        .mode("append")
+        .save()
+    )
+    return df.count()
 
 # produce manually
 def main():
@@ -157,7 +142,7 @@ def main():
     fs = s3fs.S3FileSystem()
     n_rows = 0
 
-    data_dir = 's3://flezi-data/nyc-taxi/'
+    data_dir = 's3://nblong-data-project/nyc_taxi/source/'
     list_files = fs.listdir(data_dir)
 
     with pg as conn:
@@ -182,7 +167,7 @@ if __name__=='__main__':
     pg = PostgresConnection(port=5432, host=os.getenv('COM_DB_HOST'))
     fs = s3fs.S3FileSystem()
 
-    data_dir = 's3://flezi-data/nyc-taxi/'
+    data_dir = 's3://nblong-data-project/nyc_taxi/source/'
     list_files = fs.listdir(data_dir)
 
     with pg as conn:
