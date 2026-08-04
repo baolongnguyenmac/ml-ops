@@ -16,7 +16,7 @@ from utils.utils import check_date
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
-S3_SILVER_PATH = "s3a://flezi-data/silver/"
+S3_SILVER_PATH = "s3a://nblong-data-project/nyc_taxi/silver/"
 SCHEMA = "silver"
 TABLE  = "nyc_taxi"
 SCHEMA_STORE = 'warehouse'
@@ -54,7 +54,7 @@ def create_session() -> SparkSession:
         # .config("spark.hadoop.hive.metastore.uris", fthrift://localhost:9084")
         .config("spark.sql.catalogImplementation", "hive")
         # create schema using spark (instead of using trino)
-        .config("spark.sql.warehouse.dir", f"s3a://flezi-data/{SCHEMA_STORE}/")
+        .config("spark.sql.warehouse.dir", f"s3a://nblong-data-project/nyc_taxi/{SCHEMA_STORE}/")
         .enableHiveSupport()
         .getOrCreate()
     )
@@ -93,12 +93,13 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
         .replace(vendor_id_map, subset='vendor_id')
     )
 
-    # create primary key
+    # create primary key (sorted columns for deterministic hash)
+    audit_cols = {'year', 'month', 'day', 'hour', 'minute', 'source_file', 'source_created_datetime', 'bronze_created_datetime'}
     df = df.withColumn(
         'trip_key',
         F.sha2(F.concat_ws(
             "||",
-            *df.columns
+            *sorted(set(df.columns).difference(audit_cols))
         ), 256)
     )
 
