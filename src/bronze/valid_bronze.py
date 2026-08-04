@@ -16,7 +16,7 @@ def post_validate_bronze(spark:SparkSession, audit_timestamp:str, expected_count
         where bronze_created_datetime = '{audit_timestamp}';
     ''').collect()[0][0]
 
-    print(f'Count bronze: {count_bronze}\nExpected (from cached source): {expected_count}\n')
+    print(f'Count bronze: {count_bronze}\nExpected: {expected_count}\n')
     assert count_bronze == expected_count
     print('\n=== Test pass ===\n')
 

@@ -28,13 +28,13 @@ with DAG(
         mounts=[
             Mount(
                 target='/app/src/utils',
-                source='/home/longnb32/FPT/ops/ml-ops/src/utils',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/src/utils',
                 type='bind',
                 read_only=True
             ),
             Mount(
                 target='/app/tracking',
-                source='/home/longnb32/FPT/ops/ml-ops/tracking',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/tracking',
                 type='bind'
             ),
         ],

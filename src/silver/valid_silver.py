@@ -11,6 +11,6 @@ def post_valid_silver(spark:SparkSession, audit_timestamp:str, expected_count:in
         where silver_updated_datetime = '{audit_timestamp}';
     ''').collect()[0][0]
 
-    print(f'Count silver: {count_silver}\nExpected (from cached source): {expected_count}\n')
+    print(f'Count silver: {count_silver}\nExpected: {expected_count}\n')
     assert count_silver == expected_count
     print('\n=== Test pass ===\n')

@@ -15,7 +15,7 @@ with DAG(
     catchup=False,  # không backfill các run bị bỏ lỡ
 ) as dag:
     DockerOperator(
-        task_id='silver.optimization',
+        task_id='optimization',
         api_version='auto',
         mount_tmp_dir=False,
 
@@ -28,7 +28,7 @@ with DAG(
         mounts=[
             Mount(
                 target='/app/src',
-                source='/home/longnb32/FPT/ops/ml-ops/src',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/src',
                 type='bind',
                 read_only=True
             )

@@ -11,7 +11,7 @@ from utils.utils import check_date
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
-S3_BRONZE_PATH = "s3a://flezi-data/bronze/"
+S3_BRONZE_PATH = "s3a://nblong-data-project/nyc_taxi/bronze/"
 SCHEMA = "bronze"
 TABLE  = "nyc_taxi"
 SCHEMA_STORE = 'warehouse'
@@ -49,7 +49,7 @@ def create_session() -> SparkSession:
         # .config("spark.hadoop.hive.metastore.uris", "thrift://localhost:9083")
         .config("spark.sql.catalogImplementation", "hive")
         # create schema using spark (instead of using trino)
-        .config("spark.sql.warehouse.dir", f"s3a://flezi-data/{SCHEMA_STORE}/")
+        .config("spark.sql.warehouse.dir", f"s3a://nblong-data-project/nyc_taxi/{SCHEMA_STORE}/")
         .enableHiveSupport()
         .getOrCreate()
     )
@@ -120,7 +120,7 @@ def ingest_bronze(spark: SparkSession, watermark:str) -> str:
     # save to lakehouse
     (
         minute_partition_df
-        .repartition("year", "month", "day", "hour", "minute") # prevend small files problem
+        .repartition("year", "month", "day", "hour", "minute") # prevent small files problem
         .write
         .option("delta.enableDeletionVectors", "true") # have deletion vectors on
         .format('delta')

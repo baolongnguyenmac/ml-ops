@@ -5,7 +5,7 @@ from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.sdk import DAG, Asset
 from docker.types import Mount
 
-bronze_asset = Asset("s3://flezi-data/bronze/")
+bronze_asset = Asset("s3://nblong-data-project/nyc_taxi/bronze/")
 
 with DAG(
     dag_id='ingest_bronze',
@@ -31,13 +31,13 @@ with DAG(
         mounts=[
             Mount(
                 target='/app/src',
-                source='/home/longnb32/FPT/ops/ml-ops/src',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/src',
                 type='bind',
                 read_only=True
             ),
             Mount(
                 target='/app/tracking',
-                source='/home/longnb32/FPT/ops/ml-ops/tracking',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/tracking',
                 type='bind'
             ),
         ],
