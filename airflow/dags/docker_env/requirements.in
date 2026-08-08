@@ -5,6 +5,7 @@ numpy
 pandas
 dotenv
 psycopg2-binary
+holidays
 
 # data lake + lake house
 minio

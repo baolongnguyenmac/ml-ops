@@ -10,15 +10,6 @@ RUN apt-get update && \
         openjdk-21-jre-headless && \
 	rm -rf /var/lib/apt/lists/*
 
-# Dependencies
-COPY requirements.in /app
-
-RUN uv pip compile requirements.in -o requirements.txt && \
-    uv pip install \
-		--no-cache-dir \
-		--system \
-		-r requirements.txt
-
 # Download JAR files for Spark's connection
 # # Postgres: postgresql-42.7.11.jar
 # # Hive + AWS: hadoop-aws-3.4.2.jar, bundle-2.29.52.jar
@@ -41,3 +32,13 @@ RUN mkdir -p /app/spark/jar && \
         https://repo1.maven.org/maven2/io/delta/delta-kernel-api/4.3.0/delta-kernel-api-4.3.0.jar && \
     curl -fSL -o /app/spark/jar/delta-kernel-defaults-4.3.0.jar \
         https://repo1.maven.org/maven2/io/delta/delta-kernel-defaults/4.3.0/delta-kernel-defaults-4.3.0.jar
+
+    # Dependencies
+COPY requirements.in /app
+
+RUN uv pip compile requirements.in -o requirements.txt && \
+    uv pip install \
+		--no-cache-dir \
+		--system \
+		-r requirements.txt
+
