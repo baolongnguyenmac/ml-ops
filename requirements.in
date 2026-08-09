@@ -8,6 +8,7 @@ dotenv
 psycopg2-binary
 plotly
 matplotlib
+holidays
 
 # data lake + lake house
 minio
@@ -27,6 +28,7 @@ confluent-kafka[avro]
 pyspark==4.1.1
 delta-spark==4.3.0
 apache-flink
+dbt-trino
 
 # airflow
 apache-airflow
