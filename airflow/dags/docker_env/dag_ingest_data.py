@@ -85,6 +85,7 @@ with DAG(
         environment={
             "AWS_ACCESS_KEY_ID": Variable.get("AWS_ACCESS_KEY_ID"),
             "AWS_SECRET_ACCESS_KEY": Variable.get("AWS_SECRET_ACCESS_KEY"),
+            "S3_URI": Variable.get("S3_URI"),
 
             "LH_METASTORE_HOST": Variable.get("LH_METASTORE_HOST"),
 

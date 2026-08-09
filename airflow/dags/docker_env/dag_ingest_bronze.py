@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 
 from airflow.models import Variable
@@ -5,7 +6,7 @@ from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.sdk import DAG, Asset
 from docker.types import Mount
 
-bronze_asset = Asset("s3://nblong-data-project/nyc_taxi/bronze/")
+bronze_asset = Asset(os.path.join(Variable.get("S3_URI"), 'bronze'))
 
 with DAG(
     dag_id='ingest_bronze',
@@ -44,6 +45,7 @@ with DAG(
         environment={
             "AWS_ACCESS_KEY_ID": Variable.get("AWS_ACCESS_KEY_ID"),
             "AWS_SECRET_ACCESS_KEY": Variable.get("AWS_SECRET_ACCESS_KEY"),
+            "S3_URI": Variable.get("S3_URI"),
 
             "COM_DB_HOST": Variable.get("COM_DB_HOST"),
             "COM_DB_PORT": Variable.get("COM_DB_PORT"),

@@ -12,13 +12,13 @@ class PostgresConnection:
     def __init__(
         self,
         host: str = "localhost",
-        port: int = 5432,
+        port: int | None = None,
         dbname: str | None = None,
         user: str | None = None,
         password: str | None = None,
     ):
         self.host = host
-        self.port = port
+        self.port = port or int(os.getenv('COM_DB_PORT'))
 
         # default: connect to data source
         self.dbname = dbname or os.environ.get("COM_DB_NAME")

@@ -1,9 +1,8 @@
 import os
-import time
 
 import s3fs
 from dotenv import load_dotenv
-from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from utils.db_connection import PostgresConnection
@@ -101,7 +100,7 @@ def transform_data(df: DataFrame) -> DataFrame:
         if 'datetime' in col and df.select(col).dtypes[0][1]=='bigint':
             # convert from nano-second to datetime
             # ref: https://stackoverflow.com/questions/72871432/convert-nanosecond-value-into-datetime-using-pyspark-in-databricks
-            df = df.withColumn(col, F.from_unixtime(F.col(col)/1000000000))
+            df = df.withColumn(col, F.to_timestamp(F.from_unixtime(F.col(col)/1000000000), 'yyyy-MM-dd HH:mm:ss'))
         else:
             spark_type = SPARK_DTYPES[dtype]
             df = df.withColumn(col, F.col(col).cast(spark_type))
@@ -109,7 +108,7 @@ def transform_data(df: DataFrame) -> DataFrame:
     # 4. Chỉ giữ các cột canonical
     return df.select(LIST_COLS)
 
-def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_size: int = 17_000, interval: float = 1.0, chunk_size:int=120):
+def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000):
     # read parquet
     df:DataFrame = (
         spark.read.parquet(filepath)
@@ -125,8 +124,7 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
     (
         df.write
         .format("jdbc")
-        .option("url", f"jdbc:postgresql://{os.getenv('COM_DB_HOST')}:5432/{os.getenv('COM_DB_NAME')}")
-        # .option("url", f"jdbc:postgresql://localhost:5432/{os.getenv('COM_DB_NAME')}")
+        .option("url", f"jdbc:postgresql://{host}:5432/{os.getenv('COM_DB_NAME')}")
         .option("dbtable", "nyc_taxi")
         .option("user", os.getenv('COM_DB_USER'))
         .option("password", os.getenv('COM_DB_PASSWORD'))
@@ -139,35 +137,30 @@ def insert_parquet(spark: SparkSession, filepath: str, n: int = 140_000, batch_s
 # produce manually
 def main():
     pg = PostgresConnection(port=5432)
-    fs = s3fs.S3FileSystem()
     n_rows = 0
 
-    data_dir = 's3://nblong-data-project/nyc_taxi/source/'
-    list_files = fs.listdir(data_dir)
+    data_dir = os.path.join(os.getenv('S3_URI'), 'source')
+    filename = 'yellow_tripdata_2020-02.parquet'
 
     with pg as conn:
         create_table(conn)
 
     spark = create_session()
 
-    # insert parquet into db
-    for idx, item in enumerate(list_files):
-        filename = item['Key'].split('/')[-1]
-        if item['Key'].endswith('.parquet'):
-            print(f'\n===== {idx}/{len(list_files)}. Process {filename} =====\n')
-            filepath = os.path.join(data_dir, filename).replace('s3', 's3a')
-            n_new_rows = insert_parquet(spark, filepath)
-            n_rows += n_new_rows
-            print(f'\nTotal inserted: {n_rows}\n')
-        time.sleep(10)
+    print(f'\n===== Process {filename} =====\n')
+    filepath = os.path.join(data_dir, filename)
+    n_new_rows = insert_parquet(spark=spark, host='localhost', filepath=filepath)
+    n_rows += n_new_rows
+    print(f'\nTotal inserted: {n_rows}\n')
 
 # produce by Airflow schedule
 if __name__=='__main__':
     # setup environment
-    pg = PostgresConnection(port=5432, host=os.getenv('COM_DB_HOST'))
+    host=os.getenv('COM_DB_HOST')
+    pg = PostgresConnection(host)
     fs = s3fs.S3FileSystem()
 
-    data_dir = 's3://nblong-data-project/nyc_taxi/source/'
+    data_dir = os.path.join(os.getenv('S3_URI'), 'source/')
     list_files = fs.listdir(data_dir)
 
     with pg as conn:
@@ -182,8 +175,8 @@ if __name__=='__main__':
 
     target_file = parquet_files.pop(0).strip()
     print(f'\n===== Process {target_file} =====\n')
-    filepath = os.path.join(data_dir, target_file).replace('s3', 's3a')
-    n_new_rows = insert_parquet(spark, filepath)
+    filepath = os.path.join(data_dir, target_file)
+    n_new_rows = insert_parquet(spark=spark, host=host, filepath=filepath)
     print(f'\nInserted: {n_new_rows} rows from {target_file}\n')
 
     # write the rest back the file

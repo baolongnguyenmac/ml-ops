@@ -1,46 +1,48 @@
 payment_map = {
-    "0": "Flex Fare trip",
+    # "0": "Flex Fare trip",
 
     # Cash
-    'cash': 'Cash',
-    "cas": "Cash",
-    "csh": "Cash",
-    "2": "Cash",
+    'cash': '2',
+    "cas": "2",
+    "csh": "2",
+    # "2": "Cash",
 
     # Credit card
-    "credit": "Credit card",
-    "crd": "Credit card",
-    "cre": "Credit card",
-    "1": "Credit card",
+    "credit": "1",
+    "crd": "1",
+    "cre": "1",
+    "1": "1",
 
     # No charge
-    "no charge": "No charge",
-    "no": "No charge",
-    "noc": "No charge",
-    "3": "No charge",
+    "no charge": "3",
+    "no": "3",
+    "noc": "3",
+    # "3": "No charge",
 
     # Dispute
-    "dispute": "Dispute",
-    "dis": "Dispute",
-    "4": "Dispute",
+    "dispute": "4",
+    "dis": "4",
+    # "4": "Dispute",
 
     # Unknown
-    "na": "Unknown",
-    "5": "Unknown",
+    "na": "5",
+    # "5": "Unknown",
 
-    "6": "Voided trip",
+    # "6": "Voided trip",
 }
 
 store_fwd_flag_map = {
     # yes
-    '1': 'Yes',
-    '1.0': 'Yes',
-    'y': 'Yes',
+    # '1': 'Yes',
+    '1.0': '1',
+    'y': '1',
+    'yes': '1',
 
     # no
-    '0': 'No',
-    '0.0': 'No',
-    'n': 'No',
+    # '0': 'No',
+    '0.0': '0',
+    'n': '0',
+    'no': '0',
 
     # null
     'nan': None,
@@ -48,15 +50,15 @@ store_fwd_flag_map = {
 }
 
 vendor_id_map = {
-    'dds': 'DDS',
+    'dds': '8',
 
-    "1": "Creative Mobile Technologies, LLC",
-    'cmt': 'Creative Mobile Technologies, LLC',
+    # "1": "Creative Mobile Technologies, LLC",
+    'cmt': '1',
 
-    'vts': 'Curb Mobility, LLC',
-    "2": "Curb Mobility, LLC",
+    # "2": "Curb Mobility, LLC",
+    'vts': '2',
 
-    "6": "Myle Technologies Inc",
+    # "6": "Myle Technologies Inc",
 
-    "7": "Helix",
+    # "7": "Helix",
 }

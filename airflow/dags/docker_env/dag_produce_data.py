@@ -10,7 +10,7 @@ with DAG(
     dag_display_name='Produce Data',
     description='Run Produce data via Airflow',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    schedule='*/2 * * * *',
+    schedule='*/1 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
 ) as dag:
@@ -41,6 +41,7 @@ with DAG(
         environment={
             "AWS_ACCESS_KEY_ID": Variable.get("AWS_ACCESS_KEY_ID"),
             "AWS_SECRET_ACCESS_KEY": Variable.get("AWS_SECRET_ACCESS_KEY"),
+            "S3_URI": Variable.get("S3_URI"),
 
             "COM_DB_HOST": Variable.get("COM_DB_HOST"),
             "COM_DB_PORT": Variable.get("COM_DB_PORT"),

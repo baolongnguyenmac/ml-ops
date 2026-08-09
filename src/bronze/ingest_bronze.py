@@ -11,12 +11,12 @@ from utils.utils import check_date
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
-S3_BRONZE_PATH = "s3a://nblong-data-project/nyc_taxi/bronze/"
 SCHEMA = "bronze"
+S3_BRONZE_PATH = os.path.join(os.getenv('S3_URI'), SCHEMA)
 TABLE  = "nyc_taxi"
 SCHEMA_STORE = 'warehouse'
 
-def create_session() -> SparkSession:
+def create_session(lh_host:str) -> SparkSession:
     return (
         SparkSession.builder
         .appName('ingest data to bronze zone')
@@ -45,16 +45,15 @@ def create_session() -> SparkSession:
             """
         )
         # Hive metastore
-        .config("spark.hadoop.hive.metastore.uris", f"thrift://{os.getenv('LH_METASTORE_HOST')}:9083")
-        # .config("spark.hadoop.hive.metastore.uris", "thrift://localhost:9083")
+        .config("spark.hadoop.hive.metastore.uris", f"thrift://{lh_host}:{9083 if lh_host!= 'localhost' else 9084}")
         .config("spark.sql.catalogImplementation", "hive")
         # create schema using spark (instead of using trino)
-        .config("spark.sql.warehouse.dir", f"s3a://nblong-data-project/nyc_taxi/{SCHEMA_STORE}/")
+        .config("spark.sql.warehouse.dir", os.path.join(os.getenv('S3_URI'), SCHEMA_STORE))
         .enableHiveSupport()
         .getOrCreate()
     )
 
-def ingest_bronze(spark: SparkSession, watermark:str) -> str:
+def ingest_bronze(spark: SparkSession, host:str, watermark:str) -> str:
     """Ingest data from source to bronze zone
 
     Args:
@@ -68,8 +67,7 @@ def ingest_bronze(spark: SparkSession, watermark:str) -> str:
     df = (
         spark.read.format("jdbc")
         .option("driver", "org.postgresql.Driver")
-        .option("url", f"jdbc:postgresql://{os.getenv('COM_DB_HOST')}:{os.getenv('COM_DB_PORT')}/{os.getenv('COM_DB_NAME')}")
-        # .option("url", f"jdbc:postgresql://localhost:{os.getenv('COM_DB_PORT')}/{os.getenv('COM_DB_NAME')}")
+        .option("url", f"jdbc:postgresql://{host}:{os.getenv('COM_DB_PORT')}/{os.getenv('COM_DB_NAME')}")
         .option("dbtable", "public.nyc_taxi")
         .option("user", os.getenv("COM_DB_USER"))
         .option("password", os.getenv("COM_DB_PASSWORD"))
@@ -138,13 +136,11 @@ Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}
 
 # trigger manually
 def main():
-    spark = create_session()
-    print(ingest_bronze(spark, '2026-07-20 11:56:56.686864'))
+    spark = create_session(lh_host='localhost')
+    print(ingest_bronze(spark=spark, host='localhost', watermark='2026-07-20 11:56:56.686864'))
 
 # trigger via Airflow schedule
 if __name__=='__main__':
-    # main()
-
     # read the tracking file to get the previous_last_date
     with open('./tracking/track_bronze', 'r') as fi:
         list_dates = fi.readlines()
@@ -153,8 +149,12 @@ if __name__=='__main__':
 
     if check_date(previous_watermark):
         print(f'\n=== Start ingest from: source_created_datetime (watermark) > {previous_watermark} ===\n')
-        spark = create_session()
-        current_watermark, ingested_count, bronze_created_datetime = ingest_bronze(spark, previous_watermark)
+        spark = create_session(lh_host=os.getenv('LH_METASTORE_HOST'))
+        current_watermark, ingested_count, bronze_created_datetime = ingest_bronze(
+            spark=spark,
+            host=os.getenv('COM_DB_HOST'),
+            watermark=previous_watermark
+        )
 
         if current_watermark != previous_watermark and check_date(current_watermark):
             print(f'\n=== New source_created_datetime (watermark) = {current_watermark} ===\n')

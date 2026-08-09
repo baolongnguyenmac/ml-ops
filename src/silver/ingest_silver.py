@@ -16,12 +16,12 @@ from utils.utils import check_date
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
-S3_SILVER_PATH = "s3a://nblong-data-project/nyc_taxi/silver/"
 SCHEMA = "silver"
+S3_SILVER_PATH = os.path.join(os.getenv('S3_URI'), SCHEMA)
 TABLE  = "nyc_taxi"
 SCHEMA_STORE = 'warehouse'
 
-def create_session() -> SparkSession:
+def create_session(lh_host:str) -> SparkSession:
     return (
         SparkSession.builder
         .appName('ingest data to silver zone')
@@ -40,7 +40,6 @@ def create_session() -> SparkSession:
         .config(
             'spark.jars',
             """
-                ./spark/jar/trino-jdbc-480.jar,
                 ./spark/jar/hadoop-aws-3.4.2.jar,
                 ./spark/jar/bundle-2.29.52.jar,
                 ./spark/jar/delta-spark_4.1_2.13-4.3.0.jar,
@@ -50,11 +49,10 @@ def create_session() -> SparkSession:
             """
         )
         # Hive metastore
-        .config("spark.hadoop.hive.metastore.uris", f"thrift://{os.getenv('LH_METASTORE_HOST')}:9083")
-        # .config("spark.hadoop.hive.metastore.uris", fthrift://localhost:9084")
+        .config("spark.hadoop.hive.metastore.uris", f"thrift://{lh_host}:{9083 if lh_host!= 'localhost' else 9084}")
         .config("spark.sql.catalogImplementation", "hive")
         # create schema using spark (instead of using trino)
-        .config("spark.sql.warehouse.dir", f"s3a://nblong-data-project/nyc_taxi/{SCHEMA_STORE}/")
+        .config("spark.sql.warehouse.dir", os.path.join(os.getenv('S3_URI'), SCHEMA_STORE))
         .enableHiveSupport()
         .getOrCreate()
     )
@@ -62,35 +60,71 @@ def create_session() -> SparkSession:
 def ingest_silver(spark:SparkSession, watermark:str) -> str:
     df = spark.read.table(f'{BRONZE_SCHEMA}.{BRONZE_TABLE}')
     df.createOrReplaceTempView('nyc_taxi')
+    batch_start_ts = datetime.now(timezone.utc)
     df = spark.sql(f'''
         select * from nyc_taxi
-        where bronze_created_datetime > timestamp '{watermark}';
+        where bronze_created_datetime <= (
+            select max(bronze_created_datetime)
+            from (
+                select * from nyc_taxi
+                where bronze_created_datetime > timestamp '{watermark}'
+                order by bronze_created_datetime asc
+                limit {140_000*3}
+            )
+        ) and bronze_created_datetime > timestamp '{watermark}'
+        and bronze_created_datetime < '{batch_start_ts!s}'
     ''')
 
     if df.count() == 0:
         return watermark, 0, None
 
-    # transfer: cast some columns, replace data within some columns
+    # cast some cols to their natural datatype
     cast_map = {
         'passenger_count': F.col('passenger_count').cast(T.IntegerType()),
         'pu_location_id' : F.col('pu_location_id').cast(T.IntegerType()),
         'do_location_id' : F.col('do_location_id').cast(T.IntegerType())
     }
     df = df.withColumns(cast_map)
+
+    # change `payment_type` to `payment_type_id` and cast to int
     df = (
         df
-        .withColumn('payment_type', F.lower(F.trim(F.col('payment_type'))))
-        .replace(payment_map, subset='payment_type')
+        .withColumn('payment_type_id', F.lower(F.trim(F.col('payment_type'))))
+        .replace(payment_map, subset='payment_type_id')
+        .withColumn('payment_type_id', F.col('payment_type_id').cast('int'))
+        .drop('payment_type')
     )
+
+    # drop outlier for `passenger_count`
+    df = df.filter(
+        (F.col('passenger_count')<7) &
+        (F.col('passenger_count')!=0)
+    )
+
+    # drop outlier for `rate_code_id` and cast to int
+    df = (
+        df.filter(
+            ((F.col('rate_code_id')>=1.0) & (F.col('rate_code_id')<=6.0)) | (F.col('rate_code_id')==99.0) |
+            (F.col('rate_code_id').isNull())
+        )
+        .withColumn('rate_code_id', F.col('rate_code_id').cast("int"))
+    )
+
+    # store_and_fwd_flag: 1/0 instead of Yes/No
     df = (
         df
-        .withColumn('store_and_fwd_flag', F.lower(F.trim(F.col('store_and_fwd_flag'))))
-        .replace(store_fwd_flag_map, subset='store_and_fwd_flag')
+        .withColumn('store_and_fwd_id', F.lower(F.trim(F.col('store_and_fwd_flag'))))
+        .replace(store_fwd_flag_map, subset='store_and_fwd_id')
+        .withColumn('store_and_fwd_id', F.col('store_and_fwd_id').cast('int'))
+        .drop('store_and_fwd_flag')
     )
+
+    # assign int id for vendor (instead of using string)
     df = (
         df
         .withColumn('vendor_id', F.lower(F.trim(F.col('vendor_id'))))
         .replace(vendor_id_map, subset='vendor_id')
+        .withColumn('vendor_id', F.col('vendor_id').cast('int'))
     )
 
     # create primary key (sorted columns for deterministic hash)
@@ -183,7 +217,7 @@ Table registered as '{table_full_name}' → {S3_SILVER_PATH}
 
 # trigger manually
 def main():
-    spark = create_session()
+    spark = create_session('localhost')
     print(ingest_silver(spark, '2026-06-30 16:04:38.483'))
 
 if __name__=='__main__':
@@ -197,7 +231,7 @@ if __name__=='__main__':
 
     if check_date(previous_last_date):
         print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_last_date} ===\n')
-        spark = create_session()
+        spark = create_session(os.getenv('LH_METASTORE_HOST'))
         current_last_date, ingested_count, silver_updated_datetime = ingest_silver(spark, previous_last_date)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
