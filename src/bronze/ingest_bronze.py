@@ -53,7 +53,7 @@ def create_session(lh_host:str) -> SparkSession:
         .getOrCreate()
     )
 
-def ingest_bronze(spark: SparkSession, host:str, watermark:str) -> str:
+def ingest_bronze(spark: SparkSession, db_host:str, watermark:str) -> str:
     """Ingest data from source to bronze zone
 
     Args:
@@ -67,7 +67,7 @@ def ingest_bronze(spark: SparkSession, host:str, watermark:str) -> str:
     df = (
         spark.read.format("jdbc")
         .option("driver", "org.postgresql.Driver")
-        .option("url", f"jdbc:postgresql://{host}:{os.getenv('COM_DB_PORT')}/{os.getenv('COM_DB_NAME')}")
+        .option("url", f"jdbc:postgresql://{db_host}:{os.getenv('COM_DB_PORT')}/{os.getenv('COM_DB_NAME')}")
         .option("dbtable", "public.nyc_taxi")
         .option("user", os.getenv("COM_DB_USER"))
         .option("password", os.getenv("COM_DB_PASSWORD"))
@@ -137,7 +137,7 @@ Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}
 # trigger manually
 def main():
     spark = create_session(lh_host='localhost')
-    print(ingest_bronze(spark=spark, host='localhost', watermark='2026-07-20 11:56:56.686864'))
+    print(ingest_bronze(spark=spark, db_host='localhost', watermark='2026-07-20 11:56:56.686864'))
 
 # trigger via Airflow schedule
 if __name__=='__main__':
@@ -152,7 +152,7 @@ if __name__=='__main__':
         spark = create_session(lh_host=os.getenv('LH_METASTORE_HOST'))
         current_watermark, ingested_count, bronze_created_datetime = ingest_bronze(
             spark=spark,
-            host=os.getenv('COM_DB_HOST'),
+            db_host=os.getenv('COM_DB_HOST'),
             watermark=previous_watermark
         )
 
