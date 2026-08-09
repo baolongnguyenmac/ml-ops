@@ -1,0 +1,6 @@
+sources:
+  - name: silver
+    database: lakehouse
+    schema: silver
+    tables:
+      - name: nyc_taxi
