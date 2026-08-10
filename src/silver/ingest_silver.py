@@ -128,9 +128,9 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
     )
 
     # create primary key (sorted columns for deterministic hash)
-    audit_cols = {'year', 'month', 'day', 'hour', 'minute', 'source_file', 'source_created_datetime', 'bronze_created_datetime'}
+    audit_cols = {'year', 'month', 'source_file', 'source_created_datetime', 'bronze_created_datetime'}
     df = df.withColumn(
-        'trip_key',
+        'content_hash',
         F.sha2(F.concat_ws(
             "||",
             *sorted(set(df.columns).difference(audit_cols))
@@ -141,7 +141,7 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
     df = (
         df
         # .drop('bronze_created_datetime')
-        .dropDuplicates(['trip_key'])
+        .dropDuplicates(['content_hash'])
     )
 
     source_count = df.count()
@@ -150,7 +150,7 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
     spark.sql(f'create database if not exists {SCHEMA}')
     print(f'\nCreated {SCHEMA}\n')
 
-    # add watermark
+    # add audit fields of silver zone
     batch_timestamp = datetime.now(timezone.utc)
     df = (
         df.withColumn('silver_created_datetime', F.lit(batch_timestamp).cast('timestamp'))
@@ -164,9 +164,9 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
         # những row thoả điều kiện sẽ có updated_datetime mới (ít nhất là vậy)
         # những row không thoả điều kiện sẽ được insert
         # điều này dẫn đến logic khi test
-        partitions = df.select("year", "month", "day", "hour", "minute").distinct().collect()
+        partitions = df.select("year", "month").distinct().collect()
         partition_filter = " or ".join([
-            f"(target.year={r['year']} and target.month={r['month']} and target.day={r['day']} and target.hour={r['hour']} and target.minute={r['minute']})"
+            f"(target.year={r['year']} and target.month={r['month']})"
             for r in partitions
         ])
         delta_table = DeltaTable.forName(spark, table_full_name)
@@ -175,13 +175,14 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
             delta_table.alias("target")
             .merge(
                 source=df.alias("source"),
-                condition=f"({partition_filter}) and (target.trip_key = source.trip_key)"
+                condition=f"({partition_filter}) and (target.record_key = source.record_key)"
             )
             .whenMatchedUpdate(
+                condition='target.content_hash != source.content_hash',
                 set={
                     col: f"source.{col}"
                     for col in df.columns
-                    if col != "silver_created_datetime"
+                    if col not in ['month', 'year', 'bronze_created_datetime', 'record_key', 'source_file', 'source_created_datetime', "silver_created_datetime"]
                 }
             )
             .whenNotMatchedInsertAll()
@@ -198,11 +199,11 @@ Table registered as '{table_full_name}' → {S3_SILVER_PATH}
         # save to lake house
         (
             df
-            .repartition("year", "month", "day", "hour", "minute") # prevend small files problem
+            .repartition("year", "month") # prevent small files problem
             .write
             .option("delta.enableDeletionVectors", "true") # have deletion vectors on
             .format('delta')
-            .partitionBy("year", "month", "day", "hour", "minute")
+            .partitionBy("year", "month")
             .mode("append")
             .option("path", S3_SILVER_PATH)
             .saveAsTable(table_full_name)   # đăng ký luôn với Hive metastore
@@ -218,11 +219,9 @@ Table registered as '{table_full_name}' → {S3_SILVER_PATH}
 # trigger manually
 def main():
     spark = create_session('localhost')
-    print(ingest_silver(spark, '2026-06-30 16:04:38.483'))
+    print(ingest_silver(spark, '2000-01-01 00:00:00.0'))
 
 if __name__=='__main__':
-    # main()
-
     # read the tracking file to get the previous_last_date
     with open('./tracking/track_silver', 'r') as fi:
         list_dates = fi.readlines()
@@ -247,4 +246,4 @@ if __name__=='__main__':
 
             # post-test
             if ingested_count != 0:
-                post_valid_silver(spark, silver_updated_datetime, ingested_count)
+                post_valid_silver(spark, ingested_count)
