@@ -28,6 +28,8 @@ def create_session(lh_host:str) -> SparkSession:
         # delta lake support
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        # allow rewrite partitions
+        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         # read/write S3
         .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
         .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
@@ -99,16 +101,22 @@ def ingest_bronze(spark: SparkSession, db_host:str, watermark:str) -> str:
     if source_count == 0:
         return watermark, 0, None
 
+    # create key
+    df = df.withColumn(
+        'record_key',
+        F.sha2(F.concat_ws(
+            "||",
+            *sorted(set(df.columns).difference({'source_file', 'source_created_datetime'}))
+        ), 256)
+    )
+
     # partition ingested time by minute
     bronze_created_datetime = datetime.now(timezone.utc)
     minute_partition_df = (
         df
         .withColumn('bronze_created_datetime', F.lit(bronze_created_datetime).cast('timestamp'))
-        .withColumn('year', F.year('bronze_created_datetime'))
-        .withColumn('month', F.month('bronze_created_datetime'))
-        .withColumn('day', F.day('bronze_created_datetime'))
-        .withColumn('hour', F.hour('bronze_created_datetime'))
-        .withColumn('minute', F.minute('bronze_created_datetime')) # since my jobs run every 2 mins
+        .withColumn('year', F.substring('source_file', 17, 4).cast('int'))
+        .withColumn('month', F.substring('source_file', 22, 2).cast('int'))
     )
 
     # create schema in trino
@@ -118,12 +126,12 @@ def ingest_bronze(spark: SparkSession, db_host:str, watermark:str) -> str:
     # save to lakehouse
     (
         minute_partition_df
-        .repartition("year", "month", "day", "hour", "minute") # prevent small files problem
+        .repartition("year", "month") # prevent small files problem
         .write
         .option("delta.enableDeletionVectors", "true") # have deletion vectors on
         .format('delta')
-        .partitionBy("year", "month", "day", "hour", "minute")
-        .mode("append")
+        .partitionBy("year", "month")
+        .mode("overwrite")
         .option("path", S3_BRONZE_PATH)
         .saveAsTable(f'{SCHEMA}.{TABLE}')   # đăng ký luôn với Hive metastore
     )
