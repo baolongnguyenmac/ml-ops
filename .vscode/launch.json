@@ -5,6 +5,26 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "produce data",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "utils.produce_data",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            // "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "ingest bronze",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "bronze.ingest_bronze",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            // "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "ingest silver",
             "type": "debugpy",
             "request": "launch",
@@ -23,15 +43,5 @@
             },
             // "cwd": "${workspaceFolder}"
         },
-        {
-            "name": "ingest bronze",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "bronze.ingest_bronze",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/src"
-            },
-            // "cwd": "${workspaceFolder}"
-        }
     ]
 }
