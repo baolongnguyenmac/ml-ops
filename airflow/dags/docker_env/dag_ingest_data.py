@@ -42,6 +42,7 @@ with DAG(
         environment={
             "AWS_ACCESS_KEY_ID": Variable.get("AWS_ACCESS_KEY_ID"),
             "AWS_SECRET_ACCESS_KEY": Variable.get("AWS_SECRET_ACCESS_KEY"),
+            "S3_URI": Variable.get("S3_URI"),
 
             "COM_DB_HOST": Variable.get("COM_DB_HOST"),
             "COM_DB_PORT": Variable.get("COM_DB_PORT"),
@@ -49,7 +50,6 @@ with DAG(
             "COM_DB_PASSWORD": Variable.get("COM_DB_PASSWORD"),
             "COM_DB_NAME": Variable.get("COM_DB_NAME"),
 
-            # "DL_METASTORE_HOST": Variable.get("DL_METASTORE_HOST"),
             "LH_METASTORE_HOST": Variable.get("LH_METASTORE_HOST"),
 
             "PYTHONPATH": '/app/src',
@@ -95,6 +95,7 @@ with DAG(
         command='python -m silver.ingest_silver',
     )
 
-    start = EmptyOperator(task_id="start_pipeline")
-    end = EmptyOperator(task_id="end_pipeline")
-    start >> bronze_ingestion >> silver_ingestion >> end
+    # start = EmptyOperator(task_id="start_pipeline")
+    # end = EmptyOperator(task_id="end_pipeline")
+    # start >> bronze_ingestion >> silver_ingestion >> end
+    bronze_ingestion >> silver_ingestion

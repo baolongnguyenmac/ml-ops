@@ -53,7 +53,6 @@ with DAG(
             "COM_DB_PASSWORD": Variable.get("COM_DB_PASSWORD"),
             "COM_DB_NAME": Variable.get("COM_DB_NAME"),
 
-            # "DL_METASTORE_HOST": Variable.get("DL_METASTORE_HOST"),
             "LH_METASTORE_HOST": Variable.get("LH_METASTORE_HOST"),
 
             "PYTHONPATH": '/app/src',
