@@ -1,9 +1,8 @@
 import os
 from datetime import datetime, timezone
 
-from airflow.models import Variable
 from airflow.providers.docker.operators.docker import DockerOperator
-from airflow.sdk import DAG, Asset
+from airflow.sdk import DAG, Asset, Variable
 from docker.types import Mount
 
 bronze_asset = Asset(os.path.join(Variable.get("S3_URI"), 'bronze'))
@@ -17,6 +16,7 @@ with DAG(
     schedule=[bronze_asset],
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
+    fail_fast=True, # stop dag if a task fails
 ) as dag:
     DockerOperator(
         task_id='silver.ingest_silver',

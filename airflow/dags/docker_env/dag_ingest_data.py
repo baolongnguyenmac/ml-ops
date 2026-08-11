@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
 
-from airflow.models import Variable
 from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import DAG
+from airflow.sdk import DAG, Variable
 from docker.types import Mount
 
 with DAG(
@@ -14,6 +13,7 @@ with DAG(
     schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
+    fail_fast=True, # stop dag if a task fails
 ) as dag:
     bronze_ingestion = DockerOperator(
         task_id='bronze.ingest_bronze',
