@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 
 import pyspark.sql.functions as F
+from delta.tables import DeltaTable
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 
@@ -99,7 +100,7 @@ def ingest_bronze(spark: SparkSession, db_host:str, watermark:str) -> str:
 
     source_count = df.count()
     if source_count == 0:
-        return watermark, 0, None
+        return watermark, 0, None, None
 
     # create key
     df = df.withColumn(
@@ -119,9 +120,20 @@ def ingest_bronze(spark: SparkSession, db_host:str, watermark:str) -> str:
         .withColumn('month', F.substring('source_file', 22, 2).cast('int'))
     )
 
-    # create schema in trino
+    # create schema in lakehouse
     spark.sql(f'create database if not exists {SCHEMA}')
     print(f'\nCreated {SCHEMA}\n')
+
+    # get current version
+    table_name = f'{SCHEMA}.{TABLE}'
+    if spark.catalog.tableExists(table_name):
+        delta_table = DeltaTable.forName(spark, table_name)
+        current_version = (
+            delta_table.history(limit=1)
+            .select('version').collect()[0][0]
+        )
+    else:
+        current_version = -1
 
     # save to lakehouse
     (
@@ -131,24 +143,23 @@ def ingest_bronze(spark: SparkSession, db_host:str, watermark:str) -> str:
         .option("delta.enableDeletionVectors", "true") # have deletion vectors on
         .format('delta')
         .partitionBy("year", "month")
-        .mode("overwrite")
+        .mode("append")
         .option("path", S3_BRONZE_PATH)
-        .saveAsTable(f'{SCHEMA}.{TABLE}')   # đăng ký luôn với Hive metastore
+        .saveAsTable(table_name)   # đăng ký luôn với Hive metastore
     )
 
     print(f"""
 Table registered as '{SCHEMA}.{TABLE}' → {S3_BRONZE_PATH}
 \tInserted {source_count} rows\n
 """)
-    return str(df.select(F.max('source_created_datetime')).collect()[0][0]), source_count, str(bronze_created_datetime)
+    return (
+        str(df.select(F.max('source_created_datetime')).collect()[0][0]),
+        source_count,
+        current_version,
+        str(bronze_created_datetime)
+    )
 
-# trigger manually
-def main():
-    spark = create_session(lh_host='localhost')
-    print(ingest_bronze(spark=spark, db_host='localhost', watermark='2026-07-20 11:56:56.686864'))
-
-# trigger via Airflow schedule
-if __name__=='__main__':
+def main(lh_host:str='localhost', db_host:str='localhost'):
     # read the tracking file to get the previous_last_date
     with open('./tracking/track_bronze', 'r') as fi:
         list_dates = fi.readlines()
@@ -157,24 +168,27 @@ if __name__=='__main__':
 
     if check_date(previous_watermark):
         print(f'\n=== Start ingest from: source_created_datetime (watermark) > {previous_watermark} ===\n')
-        spark = create_session(lh_host=os.getenv('LH_METASTORE_HOST'))
-        current_watermark, ingested_count, bronze_created_datetime = ingest_bronze(
+        spark = create_session(lh_host=lh_host)
+        current_watermark, source_count, current_version, bronze_created_datetime = ingest_bronze(
             spark=spark,
-            db_host=os.getenv('COM_DB_HOST'),
+            db_host=db_host,
             watermark=previous_watermark
         )
 
         if current_watermark != previous_watermark and check_date(current_watermark):
             print(f'\n=== New source_created_datetime (watermark) = {current_watermark} ===\n')
-            list_dates.insert(0, f'{current_watermark}\n')
-            if len(list_dates) > 500:
-                list_dates.pop()
+
+            # post-test
+            if source_count != 0:
+                post_validate_bronze(spark, source_count, current_version+1, bronze_created_datetime)
 
             # update current_last_date to the tracking file
+            list_dates.insert(0, f'{current_watermark}\n')
             with open('./tracking/track_bronze', 'w') as fout:
                 fout.writelines(list_dates)
                 fout.close()
 
-            # post-test
-            if ingested_count != 0:
-                post_validate_bronze(spark, bronze_created_datetime, ingested_count)
+if __name__=='__main__':
+    # main()
+    main(lh_host=os.getenv('LH_METASTORE_HOST'), db_host=os.getenv('COM_DB_HOST'))
+
