@@ -1,18 +1,17 @@
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 
-def post_valid_silver(spark:SparkSession, source_count:int):
-    print('\n=== Test ===\n')
-    silver_table = 'silver.nyc_taxi'
-    delta_table = DeltaTable.forName(spark, silver_table)
+def _test_with_version(delta_table:DeltaTable, version:int, source_count:int):
     history_operation = (
-        delta_table.history(limit=1)
+        delta_table.history()
+        .filter(F.col('version')==version)
         .select('operation', 'operationMetrics').collect()[0]
     )
 
-    operation = history_operation[0]
-    metrics = history_operation[1]
+    operation:str = history_operation[0]
+    metrics:dict = history_operation[1]
 
     if 'merge' in operation.lower():
         inserted = int(metrics['numTargetRowsInserted'])
@@ -23,7 +22,7 @@ def post_valid_silver(spark:SparkSession, source_count:int):
 Updated: {updated} rows
 Expected source: {expected_source} rows
 Source counted (from job): {source_count} rows''')
-        
+
         assert expected_source == source_count
         assert updated + inserted <= source_count
 
@@ -32,5 +31,16 @@ Source counted (from job): {source_count} rows''')
 Source counted (from job): {source_count} rows''')
 
         assert int(metrics["numOutputRows"])==source_count
+
+def post_validate_silver(spark:SparkSession, source_count:int, version:int):
+    print('\n=== Test ===\n')
+
+    silver_table = 'silver.nyc_taxi'
+    try:
+        delta_table = DeltaTable.forName(spark, silver_table)
+        _test_with_version(delta_table, version, source_count)
+
+    except IndexError:
+        print(f'\nVersion {version} not existed since there\'s no operation performed\n')
 
     print('\n=== Test pass ===\n')
