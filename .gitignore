@@ -248,7 +248,6 @@ coverage.xml
 .ipynb_checkpoints
 
 # IDEs and Editors
-.vscode/
 .idea/
 *.swp
 *.swo
