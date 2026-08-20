@@ -28,7 +28,7 @@ confluent-kafka[avro]
 pyspark==4.1.1
 delta-spark==4.3.0
 apache-flink
-dbt-trino
+dbt-postgres
 
 # airflow
 apache-airflow
