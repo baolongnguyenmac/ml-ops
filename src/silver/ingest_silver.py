@@ -9,8 +9,13 @@ from pyspark.sql import types as T
 
 from bronze.ingest_bronze import SCHEMA as BRONZE_SCHEMA
 from bronze.ingest_bronze import TABLE as BRONZE_TABLE
-from silver.silver_map import payment_map, store_fwd_flag_map, vendor_id_map
-from silver.valid_silver import post_valid_silver
+from silver.silver_map import (
+    payment_map,
+    rate_code_id_map,
+    store_fwd_flag_map,
+    vendor_id_map,
+)
+from silver.valid_silver import post_validate_silver
 from utils.utils import check_date
 
 load_dotenv('.env_file/infra.env')
@@ -82,17 +87,15 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
     cast_map = {
         'passenger_count': F.col('passenger_count').cast(T.IntegerType()),
         'pu_location_id' : F.col('pu_location_id').cast(T.IntegerType()),
-        'do_location_id' : F.col('do_location_id').cast(T.IntegerType())
+        'do_location_id' : F.col('do_location_id').cast(T.IntegerType()),
     }
     df = df.withColumns(cast_map)
 
-    # change `payment_type` to `payment_type_id` and cast to int
+    # payment_type
     df = (
         df
-        .withColumn('payment_type_id', F.lower(F.trim(F.col('payment_type'))))
-        .replace(payment_map, subset='payment_type_id')
-        .withColumn('payment_type_id', F.col('payment_type_id').cast('int'))
-        .drop('payment_type')
+        .withColumn('payment_type', F.lower(F.trim(F.col('payment_type'))))
+        .replace(payment_map, subset='payment_type')
     )
 
     # drop outlier for `passenger_count`
@@ -104,31 +107,44 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
     # drop outlier for `rate_code_id` and cast to int
     df = (
         df.filter(
-            ((F.col('rate_code_id')>=1.0) & (F.col('rate_code_id')<=6.0)) | (F.col('rate_code_id')==99.0) |
+            ((F.col('rate_code_id')>=1) & (F.col('rate_code_id')<=6)) | (F.col('rate_code_id')==99) |
             (F.col('rate_code_id').isNull())
         )
-        .withColumn('rate_code_id', F.col('rate_code_id').cast("int"))
+        .withColumn('rate_code_id', F.col('rate_code_id').cast('string'))
+        .replace(rate_code_id_map, subset='rate_code_id')
+        .withColumnRenamed('rate_code_id', 'rate_code')
     )
 
-    # store_and_fwd_flag: 1/0 instead of Yes/No
+    # store_and_fwd_flag
     df = (
         df
-        .withColumn('store_and_fwd_id', F.lower(F.trim(F.col('store_and_fwd_flag'))))
-        .replace(store_fwd_flag_map, subset='store_and_fwd_id')
-        .withColumn('store_and_fwd_id', F.col('store_and_fwd_id').cast('int'))
-        .drop('store_and_fwd_flag')
+        .withColumn('store_and_fwd_flag', F.lower(F.trim(F.col('store_and_fwd_flag'))))
+        .replace(store_fwd_flag_map, subset='store_and_fwd_flag')
     )
 
     # assign int id for vendor (instead of using string)
     df = (
         df
-        .withColumn('vendor_id', F.lower(F.trim(F.col('vendor_id'))))
-        .replace(vendor_id_map, subset='vendor_id')
-        .withColumn('vendor_id', F.col('vendor_id').cast('int'))
+        .withColumnRenamed('vendor_id', 'vendor')
+        .withColumn('vendor', F.lower(F.trim(F.col('vendor'))))
+        .replace(vendor_id_map, subset='vendor')
+    )
+
+    # create schema in lakehouse
+    spark.sql(f'create database if not exists {SCHEMA}')
+    print(f'\nCreated {SCHEMA}\n')
+
+    # add audit fields of silver zone
+    batch_timestamp = datetime.now(timezone.utc)
+    df = (
+        df.withColumn('silver_created_datetime', F.lit(batch_timestamp).cast('timestamp'))
+        .withColumn('silver_updated_datetime', F.lit(batch_timestamp).cast('timestamp'))
     )
 
     # create primary key (sorted columns for deterministic hash)
-    audit_cols = {'year', 'month', 'source_file', 'source_created_datetime', 'bronze_created_datetime'}
+    # đáng nhé nên thêm `silver_created_datetime` vào `audit_cols` nhưng tôi muốn tạo ra các records bị update giả
+    # nếu thêm `silver_created_datetime` thì data sẽ không được update nếu chạy lại (vì đây là dữ liệu tĩnh nên tôi muốn chạy lại để thử logic upsert)
+    audit_cols = {'year', 'month', 'source_file', 'source_created_datetime', 'bronze_created_datetime', 'silver_updated_datetime'}
     df = df.withColumn(
         'content_hash',
         F.sha2(F.concat_ws(
@@ -144,32 +160,24 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
         .dropDuplicates(['content_hash'])
     )
 
-    source_count = df.count()
+    table_name = f'{SCHEMA}.{TABLE}'
+    if spark.catalog.tableExists(table_name):
+        delta_table = DeltaTable.forName(spark, table_name)
 
-    # create schema in trino
-    spark.sql(f'create database if not exists {SCHEMA}')
-    print(f'\nCreated {SCHEMA}\n')
+        # get current version
+        current_version = (
+            delta_table.history(limit=1)
+            .select('version').collect()[0][0]
+        )
 
-    # add audit fields of silver zone
-    batch_timestamp = datetime.now(timezone.utc)
-    df = (
-        df.withColumn('silver_created_datetime', F.lit(batch_timestamp).cast('timestamp'))
-        .withColumn('silver_updated_datetime', F.lit(batch_timestamp).cast('timestamp'))
-    )
-
-    table_full_name = f'{SCHEMA}.{TABLE}'
-    if spark._jsparkSession.catalog().tableExists(table_full_name):
         # upsert to delta table
-        # khi upsert theo logic này, sẽ luôn luôn có 1 lượng row = source_count bị effected trong target table
-        # những row thoả điều kiện sẽ có updated_datetime mới (ít nhất là vậy)
+        # những row thoả điều kiện sẽ được update các trường như định nghĩa
         # những row không thoả điều kiện sẽ được insert
-        # điều này dẫn đến logic khi test
         partitions = df.select("year", "month").distinct().collect()
         partition_filter = " or ".join([
             f"(target.year={r['year']} and target.month={r['month']})"
             for r in partitions
         ])
-        delta_table = DeltaTable.forName(spark, table_full_name)
         target_before_count = delta_table.toDF().count()
         (
             delta_table.alias("target")
@@ -188,14 +196,17 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
             .whenNotMatchedInsertAll()
             .execute()
         )
-        target_after_count = delta_table.toDF().count()
 
+        target_after_count = delta_table.toDF().count()
+        source_count = df.count()
         print(f"""
-Table registered as '{table_full_name}' → {S3_SILVER_PATH}
+Table registered as '{table_name}' → {S3_SILVER_PATH}
+\tTarget before operation: {target_before_count} rows. Target after operation: {target_after_count} rows
 \tUpdated {target_before_count + source_count - target_after_count} rows
 \tInserted {target_after_count - target_before_count} rows
 """)
     else:
+        current_version = -1
         # save to lake house
         (
             df
@@ -206,22 +217,23 @@ Table registered as '{table_full_name}' → {S3_SILVER_PATH}
             .partitionBy("year", "month")
             .mode("append")
             .option("path", S3_SILVER_PATH)
-            .saveAsTable(table_full_name)   # đăng ký luôn với Hive metastore
+            .saveAsTable(table_name)   # đăng ký luôn với Hive metastore
         )
 
+        source_count = df.count()
         print(f"""
-Table registered as '{table_full_name}' → {S3_SILVER_PATH}
+Table registered as '{table_name}' → {S3_SILVER_PATH}
 \tInserted {source_count} rows
 """)
 
-    return str(df.select(F.max('bronze_created_datetime')).collect()[0][0]), source_count, str(batch_timestamp)
+    return (
+        str(df.select(F.max('bronze_created_datetime')).collect()[0][0]),
+        source_count,
+        current_version,
+    )
 
 # trigger manually
-def main():
-    spark = create_session('localhost')
-    print(ingest_silver(spark, '2000-01-01 00:00:00.0'))
-
-if __name__=='__main__':
+def main(lh_host:str='localhost'):
     # read the tracking file to get the previous_last_date
     with open('./tracking/track_silver', 'r') as fi:
         list_dates = fi.readlines()
@@ -230,20 +242,21 @@ if __name__=='__main__':
 
     if check_date(previous_last_date):
         print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_last_date} ===\n')
-        spark = create_session(os.getenv('LH_METASTORE_HOST'))
-        current_last_date, ingested_count, silver_updated_datetime = ingest_silver(spark, previous_last_date)
+        spark = create_session(lh_host)
+        current_last_date, source_count, current_version = ingest_silver(spark, previous_last_date)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
             print(f'\n=== New bronze_created_datetime (watermark): {current_last_date} ===\n')
-            list_dates.insert(0, f'{current_last_date}\n')
-            if len(list_dates) > 500:
-                list_dates.pop()
+
+            # post-test
+            if source_count != 0:
+                post_validate_silver(spark, source_count, current_version+1)
 
             # update current_last_date to the tracking file
+            list_dates.insert(0, f'{current_last_date}\n')
             with open('./tracking/track_silver', 'w') as fout:
                 fout.writelines(list_dates)
                 fout.close()
 
-            # post-test
-            if ingested_count != 0:
-                post_valid_silver(spark, ingested_count)
+if __name__=='__main__':
+    main(lh_host=os.getenv('LH_METASTORE_HOST'))
