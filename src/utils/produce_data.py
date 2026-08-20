@@ -160,8 +160,7 @@ if __name__=='__main__':
     pg = PostgresConnection(host)
     fs = s3fs.S3FileSystem()
 
-    data_dir = os.path.join(os.getenv('S3_URI'), 'source/')
-    list_files = fs.listdir(data_dir)
+    data_dir = os.path.join(os.getenv('S3_URI'), 'source')
 
     with pg as conn:
         create_table(conn)
