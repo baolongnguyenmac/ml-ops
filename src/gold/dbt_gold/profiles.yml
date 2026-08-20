@@ -2,27 +2,14 @@ dbt_gold:
   outputs:
 
     dev:
-      type: trino
-      method: none
-      user: trino
-      password:
-      database: postgres
-      host: localhost
-      port: 8082
+      type: postgres
+      host: company_db
+      # host: localhost
+      user: company
+      pass: company
+      port: 5432
+      dbname: gold
       schema: public
       threads: 8
-      timezone: UTC
-
-    prod:
-      type: trino
-      method: none
-      user: trino
-      password:
-      database: postgres
-      host: localhost
-      port: 8082
-      schema: public
-      threads: 8
-      timezone: UTC
 
   target: dev

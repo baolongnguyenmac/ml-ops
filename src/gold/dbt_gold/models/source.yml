@@ -1,6 +1,6 @@
 sources:
-  - name: silver
-    database: lakehouse
-    schema: silver
+  - name: staging
+    database: gold
+    schema: public
     tables:
-      - name: nyc_taxi
+      - name: nyc_taxi_staging

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import DAG, Variable
 from docker.types import Mount
 
@@ -14,7 +15,7 @@ with DAG(
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
 ) as dag:
-    DockerOperator(
+    setup_dim_date = DockerOperator(
         task_id='gold.setup_gold',
         api_version='auto',
         mount_tmp_dir=False,
@@ -51,3 +52,30 @@ with DAG(
         },
         command='python -m gold.setup_gold',
     )
+
+    setup_deps_seed = DockerOperator(
+        task_id='deps_seed',
+        api_version='auto',
+        mount_tmp_dir=False,
+
+        auto_remove='force',
+        network_mode="ml-ops_default",
+        docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
+        image='longnb32/spark_env:v1.3',
+        container_name='ctn_seed_gold',
+        working_dir='/app/src/gold/dbt_gold',
+        mounts=[
+            Mount(
+                target='/app/src/gold/dbt_gold',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/src/gold/dbt_gold',
+                type='bind',
+                read_only=False
+            )
+        ],
+        environment={
+            "PYTHONUNBUFFERED": 1
+        },
+        command=['bash', '-c', 'pwd && dbt deps && dbt seed'],
+    )
+
+    [setup_dim_date, setup_deps_seed]

@@ -1,7 +1,11 @@
 seeds:
   - name: dim_location
     columns:
-      - name: location_id
+      - name: surrogate_id
+        tests:
+          - unique
+          - not_null
+      - name: business_location_id
         tests:
           - unique
           - not_null
@@ -17,7 +21,11 @@ seeds:
 
   - name: dim_payment_type
     columns:
-      - name: payment_id
+      - name: surrogate_id
+        tests:
+          - unique
+          - not_null
+      - name: business_payment_id
         tests:
           - unique
           - not_null
@@ -28,7 +36,11 @@ seeds:
 
   - name: dim_rate_code
     columns:
-      - name: rate_code_id
+      - name: surrogate_id
+        tests:
+          - unique
+          - not_null
+      - name: business_rate_code_id
         tests:
           - unique
           - not_null
@@ -37,9 +49,28 @@ seeds:
           - unique
           - not_null
 
+  - name: dim_store_fwd
+    columns:
+      - name: surrogate_id
+        tests:
+          - unique
+          - not_null
+      - name: business_store_and_fwd_id
+        tests:
+          - unique
+          - not_null
+      - name: store_and_fwd_flag
+        tests:
+          - unique
+          - not_null
+
   - name: dim_vendor
     columns:
-      - name: vendor_id
+      - name: surrogate_id
+        tests:
+          - unique
+          - not_null
+      - name: business_vendor_id
         tests:
           - unique
           - not_null
