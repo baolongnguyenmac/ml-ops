@@ -22,7 +22,6 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
             },
-            // "cwd": "${workspaceFolder}"
         },
         {
             "name": "ingest silver",
@@ -34,14 +33,13 @@
             },
         },
         {
-            "name": "data process",
+            "name": "ingest gold staging",
             "type": "debugpy",
             "request": "launch",
-            "module": "eda.data_preprocessor",
+            "module": "gold.ingest_staging",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
             },
-            // "cwd": "${workspaceFolder}"
         },
     ]
 }

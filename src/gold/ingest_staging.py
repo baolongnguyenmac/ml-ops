@@ -64,6 +64,10 @@ def ingest_staging(spark:SparkSession, watermark:str, db_host:str) -> str:
         and silver_updated_datetime < '{batch_start_ts!s}'
     ''')
 
+    source_count = df.count()
+    if source_count == 0:
+        return watermark, 0
+
     # overwrite to staging table in postgres of gold
     (
         df.write
@@ -78,7 +82,6 @@ def ingest_staging(spark:SparkSession, watermark:str, db_host:str) -> str:
         .save()
     )
 
-    source_count = df.count()
     print(f"\nTruncate 'gold.public.nyc_taxi_staging'\nInserted {source_count} rows\n")
 
     return (
@@ -94,12 +97,12 @@ def main(lh_host:str='localhost', db_host:str='localhost'):
         fi.close()
 
     if check_date(previous_last_date):
-        print(f'\n=== Start ingest from silver_created_datetime (watermark) > {previous_last_date} ===\n')
+        print(f'\n=== Start ingest from silver_updated_datetime (watermark) > {previous_last_date} ===\n')
         spark = create_session(lh_host)
         current_last_date, source_count = ingest_staging(spark, previous_last_date, db_host)
 
         if current_last_date != previous_last_date and check_date(current_last_date):
-            print(f'\n=== New silver_created_datetime (watermark): {current_last_date} ===\n')
+            print(f'\n=== New silver_updated_datetime (watermark): {current_last_date} ===\n')
 
             # post-test
             if source_count != 0:

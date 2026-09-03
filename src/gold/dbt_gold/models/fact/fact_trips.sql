@@ -18,8 +18,8 @@
 with source as (
     select * from {{ source('staging', 'nyc_taxi_staging') }}
     {% if is_incremental() %}
-    where year >= (select max(year)  from {{ this }})
-        and month >= (select max(month) from {{ this }})
+    -- where year >= (select max(year)  from {{ this }})
+    --     and month >= (select max(month) from {{ this }})
     {% endif %}
 ),
 dim_location as (
@@ -94,5 +94,5 @@ from source as s
     left join dim_vendor as dv on s.vendor=dv.vendor_name
 
 {% if is_incremental() %}
-where s.silver_updated_datetime > (select max(silver_updated_datetime) from {{ this }})
+-- where s.silver_updated_datetime > (select max(silver_updated_datetime) from {{ this }})
 {% endif %}
