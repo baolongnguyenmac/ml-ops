@@ -1,11 +1,15 @@
-select max(pickup_datetime) from nyc_taxi;
+select distinct source_file from nyc_taxi order by source_file asc;
+
+select max(source_file) from nyc_taxi;
+
+select max(pickup_datetime), min(pickup_datetime) from nyc_taxi;
 
 select created_datetime, count(*) from nyc_taxi
 group by created_datetime;
 
 select count(*) from public.nyc_taxi where created_datetime > timestamp '2026-06-30 05:45:49.777569';
 
-select count(*) from public.nyc_taxi;
+select count(*) from nyc_taxi;
 
 select count(*) from nyc_taxi where extract(year from pickup_datetime)=2025 and extract(month from pickup_datetime)=12;
 
@@ -97,3 +101,26 @@ select * from nyc_taxi
 where
 	extract(month from pickup_datetime)<>2 and
 	extract(year from pickup_datetime)=2002;
+
+-- drop database bronze_metastore;
+-- drop database silver_metastore;
+-- create database metastore;
+
+-- drop table nyc_taxi;
+
+select * from nyc_taxi limit 1;
+
+select max(source_created_datetime) from (
+	select * from nyc_taxi
+	where source_created_datetime <= (
+		select max(source_created_datetime)
+		from (
+			select * from nyc_taxi
+			where source_created_datetime > timestamp '2026-08-12 18:29:35.957459'
+			order by source_created_datetime asc
+			limit 420000
+		)
+	) and source_created_datetime > timestamp '2026-08-12 18:29:35.957459'
+);
+
+select max(source_file) from nyc_taxi;
