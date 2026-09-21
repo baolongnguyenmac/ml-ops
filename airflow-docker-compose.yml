@@ -119,7 +119,7 @@ services:
       interval: 10s
       retries: 5
       start_period: 5s
-    restart: always
+    # restart: always
 
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
@@ -146,7 +146,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    # restart: always
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -161,7 +161,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    # restart: always
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -176,7 +176,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    # restart: always
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -197,7 +197,7 @@ services:
       # Required to handle warm shutdown of the celery workers properly
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
       DUMB_INIT_SETSID: "0"
-    restart: always
+    # restart: always
     depends_on:
       <<: *airflow-common-depends-on
       airflow-apiserver:
@@ -214,7 +214,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    # restart: always
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:
@@ -343,7 +343,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: always
+    # restart: always
     depends_on:
       <<: *airflow-common-depends-on
       airflow-init:

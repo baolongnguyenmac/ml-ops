@@ -5,6 +5,7 @@ INFRA_COMPOSE_CMD = docker compose --env-file .env_file/infra.env -f infra-docke
 # -i: relate to Infrastructure
 # -v: relate to containers' volume
 
+# airflow
 up-a:
 	$(AIRFLOW_COMPOSE_CMD) up -d
 
@@ -20,6 +21,7 @@ down-av:
 restart-a:
 	$(AIRFLOW_COMPOSE_CMD) restart
 
+# infra
 up-i:
 	$(INFRA_COMPOSE_CMD) up -d
 
@@ -35,6 +37,15 @@ down-iv:
 restart-i:
 	$(INFRA_COMPOSE_CMD) restart
 
+## infra - batch processing
+up-ib:
+	$(INFRA_COMPOSE_CMD) up lh-metastore trino company_db -d
+
+## infra - stream processing
+up-is:
+	$(INFRA_COMPOSE_CMD) up zookeeper broker schema-registry debezium debezium-ui control-center -d
+
+# dependencies
 compile:
 	uv pip compile requirements.in -o requirements.txt
 

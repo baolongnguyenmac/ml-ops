@@ -14,6 +14,7 @@ with DAG(
     description='Run Ingest Silver via Airflow',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     schedule=[bronze_asset],
+    # schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails

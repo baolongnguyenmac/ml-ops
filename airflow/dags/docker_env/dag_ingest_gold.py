@@ -14,8 +14,8 @@ with DAG(
     dag_display_name='Ingest Gold',
     description='Run Ingest Gold via Airflow',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    # schedule=[silver_asset],
-    schedule=None,
+    schedule=[silver_asset],
+    # schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
@@ -153,3 +153,4 @@ with DAG(
     )
 
     [setup_dim_date, ingest_staging, setup_deps_seed] >> dbt_transform
+    # dbt_transform
