@@ -25,7 +25,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.3',
+        image='longnb32/spark_env:v1.4',
         container_name='ctn_ingest_bronze',
         working_dir='/app',
         mounts=[
@@ -68,7 +68,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.3',
+        image='longnb32/spark_env:v1.4',
         container_name='ctn_ingest_silver',
         working_dir='/app',
         mounts=[
@@ -105,7 +105,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.3',
+        image='longnb32/spark_env:v1.4',
         container_name='ctn_setup_gold',
         working_dir='/app',
         mounts=[
@@ -143,7 +143,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.3',
+        image='longnb32/spark_env:v1.4',
         container_name='ctn_seed_gold',
         working_dir='/app/src/gold/dbt_gold',
         mounts=[
@@ -169,7 +169,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.3',
+        image='longnb32/spark_env:v1.4',
         container_name='ctn_ingest_gold_staging',
         working_dir='/app',
         mounts=[
@@ -212,7 +212,7 @@ with DAG(
         auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
-        image='longnb32/spark_env:v1.3',
+        image='longnb32/spark_env:v1.4',
         container_name='ctn_dbt_transform',
         working_dir='/app/src/gold/dbt_gold',
         mounts=[
@@ -229,7 +229,7 @@ with DAG(
         command=['bash', '-c', 'pwd && dbt run && dbt test'],
     )
 
-    # start = EmptyOperator(task_id="start_pipeline")
-    # end = EmptyOperator(task_id="end_pipeline")
+    start = EmptyOperator(task_id="start_pipeline")
+    end = EmptyOperator(task_id="end_pipeline")
     # start >> bronze_ingestion >> silver_ingestion >> [setup_dim_date, ingest_staging, setup_deps_seed] >> dbt_transform >> end
     bronze_ingestion >> silver_ingestion >> [setup_dim_date, ingest_staging, setup_deps_seed] >> dbt_transform
