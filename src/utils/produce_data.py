@@ -1,8 +1,7 @@
 import os
 
-import s3fs
 from dotenv import load_dotenv
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 
 from utils.db_connection import PostgresConnection
@@ -33,10 +32,10 @@ def create_session() -> SparkSession:
         .getOrCreate()
     )
 
-def create_table(conn):
+def create_table(conn, table_name:str):
     """Tạo bảng nyc_taxi nếu chưa tồn tại."""
-    query = """
-    CREATE TABLE IF NOT EXISTS public.nyc_taxi (
+    query = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
         vendor_id               TEXT,
         pickup_datetime         TIMESTAMP,
         dropoff_datetime        TIMESTAMP,
@@ -69,7 +68,7 @@ def create_table(conn):
     with conn.cursor() as cur:
         cur.execute(query)
     conn.commit()
-    print("Table 'nyc_taxi' created successfully.")
+    print(f"Table '{table_name}' created successfully.")
 
 def _resolve_mapping(df_columns: str) -> dict:
     """Tìm schema mapping khớp với columns của file."""
@@ -108,62 +107,94 @@ def transform_data(df: DataFrame) -> DataFrame:
     # 4. Chỉ giữ các cột canonical
     return df.select(LIST_COLS)
 
-def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000):
-    # read parquet
-    df:DataFrame = (
-        spark.read.parquet(filepath)
-        # .repartition(os.path.getsize(filepath)/(1024**2)//chunk_size)
+def _insert_batch(df:DataFrame, n_write:int, host:str)->int:
+    print('Push data to batch table')
+
+    total_inserted = 0
+    for _ in range(n_write):
+        # insert to db
+        tmp_df = df.sample(1/n_write, seed=42)
+        (
+            tmp_df
+            .write
+            .format("jdbc")
+            .option("url", f"jdbc:postgresql://{host}:5432/{os.getenv('COM_DB_NAME')}")
+            .option("dbtable", "nyc_taxi")
+            .option("user", os.getenv('COM_DB_USER'))
+            .option("password", os.getenv('COM_DB_PASSWORD'))
+            .option("driver", "org.postgresql.Driver")
+            .mode("append")
+            .save()
+        )
+        total_inserted += tmp_df.count()
+
+    return total_inserted
+
+def _insert_stream(spark:SparkSession, df:DataFrame, host:str)->int:
+    print('Push data to stream table')
+
+    df = (
+        df.sample(0.2, seed=42)
+        .withColumn('year', F.substring('source_file', 17, 4).cast('int'))
+        .withColumn('month', F.substring('source_file', 22, 2).cast('int'))
+        .select('*')
+        .where((F.col('year')==F.year(F.col('pickup_datetime'))) & (F.col('month')==F.month(F.col('pickup_datetime'))))
     )
+    total_rows = df.count()
+    batch_size = total_rows//10
+
+    window_spec = Window.orderBy('pickup_datetime')
+    df = df.withColumn('index', F.row_number().over(window_spec) - 1)
+    df.createOrReplaceTempView('nyc_taxi_stream')
+
+    for i in range(0, total_rows, batch_size):
+        start_index = i
+        end_index = min(i+batch_size, total_rows)
+        print(f'\tProcess from {start_index} to {end_index}')
+
+        tmp_df = spark.sql(f'''
+            select *
+            from nyc_taxi_stream
+            where (nyc_taxi_stream.index >= {start_index}) and (nyc_taxi_stream.index < {end_index})
+        ''')
+        (
+            tmp_df.drop('index', 'year', 'month')
+            .write
+            .format("jdbc")
+            .option("url", f"jdbc:postgresql://{host}:5432/{os.getenv('COM_DB_NAME')}")
+            .option("dbtable", "nyc_taxi_stream")
+            .option("user", os.getenv('COM_DB_USER'))
+            .option("password", os.getenv('COM_DB_PASSWORD'))
+            .option("driver", "org.postgresql.Driver")
+            .mode("append")
+            .save()
+        )
+    return total_rows
+
+def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000, mode:str='batch'):
+    # read parquet
+    df:DataFrame = (spark.read.parquet(filepath))
 
     # sample n rows
     fraction = min(n/df.count(), 1.0)
     df = transform_data(df.sample(fraction=fraction, seed=42))
     df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
 
-    # insert to db
-    (
-        df.write
-        .format("jdbc")
-        .option("url", f"jdbc:postgresql://{host}:5432/{os.getenv('COM_DB_NAME')}")
-        .option("dbtable", "nyc_taxi")
-        .option("user", os.getenv('COM_DB_USER'))
-        .option("password", os.getenv('COM_DB_PASSWORD'))
-        .option("driver", "org.postgresql.Driver")
-        .mode("append")
-        .save()
-    )
-    return df.count()
+    # insert data into postgres
+    n_write = 10
+    if mode=='stream':
+        return _insert_stream(spark, df, host)
+    elif mode=='batch':
+        # write 10 times to db
+        return _insert_batch(df, n_write, host)
+    elif mode=='both':
+        return _insert_stream(spark, df, host) + _insert_batch(df, n_write, host)
 
-# produce manually
-def main():
-    pg = PostgresConnection(port=5432)
-    n_rows = 0
-
-    data_dir = os.path.join(os.getenv('S3_URI'), 'source')
-    filename = 'yellow_tripdata_2020-02.parquet'
-
-    with pg as conn:
-        create_table(conn)
-
-    spark = create_session()
-
-    print(f'\n===== Process {filename} =====\n')
-    filepath = os.path.join(data_dir, filename)
-    n_new_rows = insert_parquet(spark=spark, host='localhost', filepath=filepath)
-    n_rows += n_new_rows
-    print(f'\nTotal inserted: {n_rows}\n')
-
-# produce by Airflow schedule
-if __name__=='__main__':
-    # setup environment
-    host=os.getenv('COM_DB_HOST')
+def main(host:str='localhost', mode:str='stream'):
     pg = PostgresConnection(host)
-    fs = s3fs.S3FileSystem()
-
-    data_dir = os.path.join(os.getenv('S3_URI'), 'source')
-
     with pg as conn:
-        create_table(conn)
+        # create_table(conn, 'public.nyc_taxi')
+        create_table(conn, 'public.nyc_taxi_stream')
 
     spark = create_session()
 
@@ -172,13 +203,20 @@ if __name__=='__main__':
         parquet_files = fin.readlines()
         fin.close()
 
+    data_dir = os.path.join(os.getenv('S3_URI'), 'source')
+
     target_file = parquet_files.pop(0).strip()
     print(f'\n===== Process {target_file} =====\n')
     filepath = os.path.join(data_dir, target_file)
-    n_new_rows = insert_parquet(spark=spark, host=host, filepath=filepath)
+    n_new_rows = insert_parquet(spark=spark, host=host, filepath=filepath, mode=mode)
     print(f'\nInserted: {n_new_rows} rows from {target_file}\n')
 
     # write the rest back the file
-    with open('./tracking/track_produce_data', 'w') as fout:
-        fout.writelines(parquet_files)
-        fout.close()
+    if mode=='both':
+        with open('./tracking/track_produce_data', 'w') as fout:
+            fout.writelines(parquet_files)
+            fout.close()
+
+if __name__=='__main__':
+    # main()
+    main(host=os.getenv('COM_DB_HOST'), mode='both')
