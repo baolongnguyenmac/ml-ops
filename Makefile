@@ -43,7 +43,7 @@ up-ib:
 
 ## infra - stream processing
 up-is:
-	$(INFRA_COMPOSE_CMD) up zookeeper broker schema-registry debezium debezium-ui control-center -d
+	$(INFRA_COMPOSE_CMD) up company_db broker schema-registry connect control-center ksqldb-server rest-proxy -d
 
 # dependencies
 compile:
