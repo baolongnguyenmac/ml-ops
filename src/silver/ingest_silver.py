@@ -1,14 +1,16 @@
 import os
 from datetime import datetime, timezone
+from random import randint
 
 from delta.tables import DeltaTable
 from dotenv import load_dotenv
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
 from bronze.ingest_bronze import SCHEMA as BRONZE_SCHEMA
-from bronze.ingest_bronze import TABLE as BRONZE_TABLE
+from bronze.ingest_bronze import TABLE_BATCH as BRONZE_TABLE_BATCH
+from bronze.ingest_bronze import TABLE_STREAM as BRONZE_TABLE_STREAM
 from silver.silver_map import (
     payment_map,
     rate_code_id_map,
@@ -16,73 +18,69 @@ from silver.silver_map import (
     vendor_id_map,
 )
 from silver.valid_silver import post_validate_silver
-from utils.utils import check_date
+from utils.utils import _get_table_version, check_date, parse_args
 
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
 
 SCHEMA = "silver"
-S3_SILVER_PATH = os.path.join(os.getenv('S3_URI'), SCHEMA)
-TABLE  = "nyc_taxi"
-SCHEMA_STORE = 'warehouse'
 
-def create_session(lh_host:str) -> SparkSession:
+# batch
+TABLE_BATCH  = "nyc_taxi"
+SCHEMA_STORE = 'warehouse'
+S3_SILVER_BATCH_PATH = os.path.join(os.getenv('S3_URI'), SCHEMA)
+
+# stream
+TABLE_STREAM = "nyc_taxi_stream"
+S3_SILVER_STREAM_PATH = os.path.join(os.getenv('S3_URI'), f'{SCHEMA}_stream')
+CHECKPOINT = '/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint/silver_stream'
+
+def create_session(lh_host:str='localhost', checkpoint:str=CHECKPOINT) -> SparkSession:
     return (
         SparkSession.builder
-        .appName('ingest data to silver zone')
+        .appName('ingest data to bronze zone')
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .config("spark.sql.session.timeZone", "UTC")
-        # workaround for Spark 4.1.x CollapseProject optimizer bug
-        .config("spark.sql.optimizer.excludedRules", "org.apache.spark.sql.catalyst.optimizer.CollapseProject")
-        # delta lake support
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+
+        # packages supporting read/write postgres, S3, hive (data lake)
+        # and Kafka, avro (for streaming)
+        .config(
+            'spark.jars.packages',
+            'org.apache.hadoop:hadoop-aws:3.4.2,'
+            'software.amazon.awssdk:bundle:2.29.52,'
+            'io.delta:delta-spark_4.1_2.13:4.3.0,'
+        )
+
         # read/write S3
         .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
         .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
-        # jar files supporting read/write postgres, trino, S3, hive (delta table for lake house)
-        .config(
-            'spark.jars',
-            """
-                ./spark/jar/hadoop-aws-3.4.2.jar,
-                ./spark/jar/bundle-2.29.52.jar,
-                ./spark/jar/delta-spark_4.1_2.13-4.3.0.jar,
-                ./spark/jar/delta-kernel-api-4.3.0.jar,
-                ./spark/jar/delta-kernel-defaults-4.3.0.jar,
-                ./spark/jar/delta-storage-4.3.0.jar,
-            """
-        )
+
+        # delta lake support
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+
+        # allow rewrite partitions
+        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+
         # Hive metastore
         .config("spark.hadoop.hive.metastore.uris", f"thrift://{lh_host}:{9083 if lh_host!= 'localhost' else 9084}")
         .config("spark.sql.catalogImplementation", "hive")
+
+        # workaround for Spark 4.1.x CollapseProject optimizer bug
+        .config("spark.sql.optimizer.excludedRules", "org.apache.spark.sql.catalyst.optimizer.CollapseProject")
+
+        # stream support
+        .config('spark.sql.streaming.checkpointLocation', checkpoint)
+        .config('spark.sql.streaming.forceDeleteTempCheckpointLocation', 'true')
+
         # create schema using spark (instead of using trino)
         .config("spark.sql.warehouse.dir", os.path.join(os.getenv('S3_URI'), SCHEMA_STORE))
         .enableHiveSupport()
         .getOrCreate()
     )
 
-def ingest_silver(spark:SparkSession, watermark:str) -> str:
-    df = spark.read.table(f'{BRONZE_SCHEMA}.{BRONZE_TABLE}')
-    df.createOrReplaceTempView('nyc_taxi')
-    batch_start_ts = datetime.now(timezone.utc)
-    df = spark.sql(f'''
-        select * from nyc_taxi
-        where bronze_created_datetime <= (
-            select max(bronze_created_datetime)
-            from (
-                select * from nyc_taxi
-                where bronze_created_datetime > timestamp '{watermark}'
-                order by bronze_created_datetime asc
-                limit {140_000*3}
-            )
-        ) and bronze_created_datetime > timestamp '{watermark}'
-        and bronze_created_datetime < '{batch_start_ts!s}'
-    ''')
-
-    if df.count() == 0:
-        return watermark, 0, None
-
+def _transform(df:DataFrame)->DataFrame:
     # cast some cols to their natural datatype
     cast_map = {
         'passenger_count': F.col('passenger_count').cast(T.IntegerType()),
@@ -130,15 +128,11 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
         .replace(vendor_id_map, subset='vendor')
     )
 
-    # create schema in lakehouse
-    spark.sql(f'create database if not exists {SCHEMA}')
-    print(f'\nCreated {SCHEMA}\n')
-
     # add audit fields of silver zone
-    batch_timestamp = datetime.now(timezone.utc)
+    # batch_timestamp = datetime.now(timezone.utc)
     df = (
-        df.withColumn('silver_created_datetime', F.lit(batch_timestamp).cast('timestamp'))
-        .withColumn('silver_updated_datetime', F.lit(batch_timestamp).cast('timestamp'))
+        df.withColumn('silver_created_datetime', F.current_timestamp())
+        .withColumn('silver_updated_datetime', F.current_timestamp())
     )
 
     # create primary key (sorted columns for deterministic hash)
@@ -154,109 +148,202 @@ def ingest_silver(spark:SparkSession, watermark:str) -> str:
     )
 
     # de-dup
-    df = (
+    return df.dropDuplicates(['content_hash'])
+
+def _insert_batch(df:DataFrame, target_table:str, s3_path:str)->int:
+    (
         df
-        # .drop('bronze_created_datetime')
-        .dropDuplicates(['content_hash'])
+        .repartition("year", "month") # prevent small files problem
+        .write
+        .option("delta.enableDeletionVectors", "true") # have deletion vectors on
+        .format('delta')
+        .partitionBy("year", "month")
+        .mode("append")
+        .option("path", s3_path)
+        .saveAsTable(target_table)   # đăng ký luôn với Hive metastore
     )
+    return df.count()
 
-    table_name = f'{SCHEMA}.{TABLE}'
-    if spark.catalog.tableExists(table_name):
-        delta_table = DeltaTable.forName(spark, table_name)
+def _upsert_batch(spark:SparkSession, df:DataFrame, target_table:str):
+    delta_table = DeltaTable.forName(spark, target_table)
 
-        # get current version
-        current_version = (
-            delta_table.history(limit=1)
-            .select('version').collect()[0][0]
+    # upsert to delta table
+    # những row thoả điều kiện sẽ được update các trường như định nghĩa
+    # những row không thoả điều kiện sẽ được insert
+    partitions = df.select("year", "month").distinct().collect()
+    partition_filter = " or ".join([
+        f"(target.year={r['year']} and target.month={r['month']})"
+        for r in partitions
+    ])
+    target_before_count = delta_table.toDF().count()
+    (
+        delta_table.alias("target")
+        .merge(
+            source=df.alias("source"),
+            condition=f"({partition_filter}) and (target.record_key = source.record_key)"
         )
-
-        # upsert to delta table
-        # những row thoả điều kiện sẽ được update các trường như định nghĩa
-        # những row không thoả điều kiện sẽ được insert
-        partitions = df.select("year", "month").distinct().collect()
-        partition_filter = " or ".join([
-            f"(target.year={r['year']} and target.month={r['month']})"
-            for r in partitions
-        ])
-        target_before_count = delta_table.toDF().count()
-        (
-            delta_table.alias("target")
-            .merge(
-                source=df.alias("source"),
-                condition=f"({partition_filter}) and (target.record_key = source.record_key)"
-            )
-            .whenMatchedUpdate(
-                condition='target.content_hash != source.content_hash',
-                set={
-                    col: f"source.{col}"
-                    for col in df.columns
-                    if col not in ['month', 'year', 'bronze_created_datetime', 'record_key', 'source_file', 'source_created_datetime', "silver_created_datetime"]
-                }
-            )
-            .whenNotMatchedInsertAll()
-            .execute()
+        .whenMatchedUpdate(
+            condition='target.content_hash != source.content_hash',
+            set={
+                col: f"source.{col}"
+                for col in df.columns
+                if col not in ['month', 'year', 'bronze_created_datetime', 'record_key', 'source_file', 'source_created_datetime', "silver_created_datetime"]
+            }
         )
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+    target_after_count = delta_table.toDF().count()
+    source_count = df.count()
+    return target_before_count, target_after_count, source_count
 
-        target_after_count = delta_table.toDF().count()
-        source_count = df.count()
-        print(f"""
-Table registered as '{table_name}' → {S3_SILVER_PATH}
-\tTarget before operation: {target_before_count} rows. Target after operation: {target_after_count} rows
-\tUpdated {target_before_count + source_count - target_after_count} rows
-\tInserted {target_after_count - target_before_count} rows
-""")
+def _save_batch(spark:SparkSession, df:DataFrame, target_table:str, s3_path:str)->tuple[int, int]:
+    previous_version = _get_table_version(spark, target_table)
+    if previous_version == -1:
+        source_count = _insert_batch(df, target_table, s3_path)
+        print(f"Table registered as '{target_table}' → {s3_path}\n")
+        print(f"\tInserted {source_count} rows")
     else:
-        current_version = -1
-        # save to lake house
-        (
-            df
-            .repartition("year", "month") # prevent small files problem
-            .write
-            .option("delta.enableDeletionVectors", "true") # have deletion vectors on
-            .format('delta')
-            .partitionBy("year", "month")
-            .mode("append")
-            .option("path", S3_SILVER_PATH)
-            .saveAsTable(table_name)   # đăng ký luôn với Hive metastore
-        )
+        target_before_count, target_after_count, source_count = _upsert_batch(spark, df, target_table)
+        print(f"Table registered as '{target_table}' → {S3_SILVER_BATCH_PATH}")
+        print(f"\tTarget before operation: {target_before_count} rows. Target after operation: {target_after_count} rows")
+        print(f"\tUpdated {target_before_count + source_count - target_after_count} rows")
+        print(f"\tInserted {target_after_count - target_before_count} rows")
+    current_version = _get_table_version(spark, target_table)
+    return source_count, current_version if current_version != previous_version else -1
 
-        source_count = df.count()
-        print(f"""
-Table registered as '{table_name}' → {S3_SILVER_PATH}
-\tInserted {source_count} rows
-""")
+def ingest_silver(
+    spark:SparkSession,
+    watermark:str,
+    source_table:str,
+    target_table:str,
+    s3_path:str
+) -> tuple[str,int,int]:
+    df = spark.read.table(source_table)
+    df.createOrReplaceTempView('nyc_taxi')
+    batch_start_ts = datetime.now(timezone.utc)
+    df = spark.sql(f'''
+        select * from nyc_taxi
+        where bronze_created_datetime <= (
+            select max(bronze_created_datetime)
+            from (
+                select * from nyc_taxi
+                where bronze_created_datetime > timestamp '{watermark}'
+                order by bronze_created_datetime asc
+                limit {140_000*3}
+            )
+        ) and bronze_created_datetime > timestamp '{watermark}'
+        and bronze_created_datetime < '{batch_start_ts!s}'
+    ''')
+
+    # process
+    silver_df = _transform(df)
+
+    # create schema in lakehouse
+    spark.sql(f'create database if not exists {SCHEMA}')
+    print(f'\nCreated {SCHEMA}\n')
+
+    # save to delta lake
+    if not silver_df.isEmpty():
+        source_count, current_version = _save_batch(spark, silver_df, target_table, s3_path)
+        new_watermark = str(silver_df.select(F.max('bronze_created_datetime')).collect()[0][0])
+    else:
+        source_count = 0
+        current_version = -1
+        new_watermark = watermark
 
     return (
-        str(df.select(F.max('bronze_created_datetime')).collect()[0][0]),
+        new_watermark,
         source_count,
-        current_version,
+        current_version
     )
 
-# trigger manually
+def ingest_stream_silver(
+    spark:SparkSession,
+    source_table:str,
+    target_table:str,
+    target_s3_path:str,
+    checkpoint:str
+):
+    bronze_df = (
+        spark.readStream
+        .format('delta')
+        .option("startingVersion", "latest") # read from the latest version of table
+        .table(source_table)
+    )
+    silver_df = _transform(bronze_df)
+
+    def _save_stream(batch_df:DataFrame, batch_id:int):
+        if not batch_df.isEmpty():
+            source_count, current_version = _save_batch(spark, batch_df, target_table, target_s3_path)
+            # nếu có thay đổi và hên xui (20%) thì kiểm tra
+            if current_version != -1 and randint(1, 10)%5 == 0:
+                post_validate_silver(spark, target_table, source_count, current_version)
+
+    # create schema in lakehouse
+    spark.sql(f'create database if not exists {SCHEMA}')
+    print(f'\nCreated {SCHEMA}\n')
+
+    # save to S3
+    query = (
+        silver_df.writeStream
+        .foreachBatch(_save_stream)
+        .trigger(processingTime='30 seconds')
+        .option("checkpointLocation", checkpoint)
+        .start()
+    )
+    print(f"Table registered as '{target_table}' → {target_s3_path}")
+    query.awaitTermination()
+
 def main(lh_host:str='localhost'):
-    # read the tracking file to get the previous_last_date
-    with open('./tracking/track_silver', 'r') as fi:
-        list_dates = fi.readlines()
-        previous_last_date = list_dates[0].strip()
-        fi.close()
+    params = parse_args()
+    spark = create_session(lh_host)
 
-    if check_date(previous_last_date):
-        print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_last_date} ===\n')
-        spark = create_session(lh_host)
-        current_last_date, source_count, current_version = ingest_silver(spark, previous_last_date)
+    if params['mode'] == 'batch':
+        # read the tracking file to get the previous_last_date
+        with open('./tracking/track_silver', 'r') as fi:
+            list_dates = fi.readlines()
+            previous_watermark = list_dates[0].strip()
+            fi.close()
 
-        if current_last_date != previous_last_date and check_date(current_last_date):
-            print(f'\n=== New bronze_created_datetime (watermark): {current_last_date} ===\n')
+        print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_watermark} ===\n')
+        source_table = f'{BRONZE_SCHEMA}.{BRONZE_TABLE_BATCH}'
+        target_table = f'{SCHEMA}.{TABLE_BATCH}'
+        current_watermark, source_count, current_version = ingest_silver(
+            spark=spark,
+            watermark=previous_watermark,
+            source_table=source_table,
+            target_table=target_table,
+            s3_path=S3_SILVER_BATCH_PATH
+        )
+
+        if (
+            current_version != -1
+            and current_watermark != previous_watermark
+            and check_date(current_watermark)
+        ):
+            print(f'\n=== New bronze_created_datetime (watermark): {current_watermark} ===\n')
 
             # post-test
-            if source_count != 0:
-                post_validate_silver(spark, source_count, current_version+1)
+            post_validate_silver(spark, target_table, source_count, current_version)
 
             # update current_last_date to the tracking file
-            list_dates.insert(0, f'{current_last_date}\n')
+            list_dates.insert(0, f'{current_watermark}\n')
             with open('./tracking/track_silver', 'w') as fout:
                 fout.writelines(list_dates)
                 fout.close()
 
+    elif params['mode'] == 'stream':
+        source_table = f'{BRONZE_SCHEMA}.{BRONZE_TABLE_STREAM}'
+        target_table = f'{SCHEMA}.{TABLE_STREAM}'
+        ingest_stream_silver(
+            spark=spark,
+            source_table=source_table,
+            target_table=target_table,
+            target_s3_path=S3_SILVER_STREAM_PATH,
+            checkpoint=CHECKPOINT
+        )
+
 if __name__=='__main__':
-    main(lh_host=os.getenv('LH_METASTORE_HOST'))
+    main()
+    # main(lh_host=os.getenv('LH_METASTORE_HOST'))
