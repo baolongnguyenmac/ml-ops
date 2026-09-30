@@ -1,11 +1,13 @@
 import os
+import time
 
 from dotenv import load_dotenv
-from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from utils.db_connection import PostgresConnection
 from utils.schema import LIST_COLS, LIST_DTYPES, SCHEMA_MAPPINGS, SPARK_DTYPES
+from utils.utils import parse_args
 
 load_dotenv('.env_file/infra.env')
 load_dotenv('.env_file/app.env')
@@ -18,17 +20,19 @@ def create_session() -> SparkSession:
         # support read timestamp with resolution in nano-second (file 2020-01 has its timestamp following this resolution)
         # https://stackoverflow.com/questions/57699926/how-to-fix-illegal-parquet-type-int64-timestamp-micros-error
         .config("spark.sql.legacy.parquet.nanosAsLong", "true")
-        # jar files supporting read/write postgres, S3
+
+        # lib for modifying postgres, S3
         .config(
-            'spark.jars',
-            """
-                ./spark/jar/postgresql-42.7.11.jar,
-                ./spark/jar/hadoop-aws-3.4.2.jar,
-                ./spark/jar/bundle-2.29.52.jar
-            """
+            'spark.jars.packages',
+            'org.postgresql:postgresql:42.7.11,'
+            'org.apache.hadoop:hadoop-aws:3.4.2,'
+            'software.amazon.awssdk:bundle:2.29.52,'
         )
+
+        # read/write S3
         .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID'))
         .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY'))
+
         .getOrCreate()
     )
 
@@ -107,69 +111,29 @@ def transform_data(df: DataFrame) -> DataFrame:
     # 4. Chỉ giữ các cột canonical
     return df.select(LIST_COLS)
 
-def _insert_batch(df:DataFrame, n_write:int, host:str)->int:
-    print('Push data to batch table')
+def _insert_batch(df:DataFrame, n_chunk:int, host:str, target_table:str, delay:int=0)->int:
+    print(f'\nPush data to table {target_table}\n')
 
     total_inserted = 0
-    for _ in range(n_write):
+    chunks = df.randomSplit(weights=[1.]*n_chunk, seed=42)
+    for idx, chunk in enumerate(chunks):
         # insert to db
-        tmp_df = df.sample(1/n_write, seed=42)
+        print(f'\tInsert chunk {idx+1}')
         (
-            tmp_df
-            .write
+            chunk.write
             .format("jdbc")
             .option("url", f"jdbc:postgresql://{host}:5432/{os.getenv('COM_DB_NAME')}")
-            .option("dbtable", "nyc_taxi")
+            .option("dbtable", target_table)
             .option("user", os.getenv('COM_DB_USER'))
             .option("password", os.getenv('COM_DB_PASSWORD'))
             .option("driver", "org.postgresql.Driver")
             .mode("append")
             .save()
         )
-        total_inserted += tmp_df.count()
+        total_inserted += chunk.count()
+        time.sleep(delay)
 
     return total_inserted
-
-def _insert_stream(spark:SparkSession, df:DataFrame, host:str)->int:
-    print('Push data to stream table')
-
-    df = (
-        df.sample(0.2, seed=42)
-        .withColumn('year', F.substring('source_file', 17, 4).cast('int'))
-        .withColumn('month', F.substring('source_file', 22, 2).cast('int'))
-        .select('*')
-        .where((F.col('year')==F.year(F.col('pickup_datetime'))) & (F.col('month')==F.month(F.col('pickup_datetime'))))
-    )
-    total_rows = df.count()
-    batch_size = total_rows//10
-
-    window_spec = Window.orderBy('pickup_datetime')
-    df = df.withColumn('index', F.row_number().over(window_spec) - 1)
-    df.createOrReplaceTempView('nyc_taxi_stream')
-
-    for i in range(0, total_rows, batch_size):
-        start_index = i
-        end_index = min(i+batch_size, total_rows)
-        print(f'\tProcess from {start_index} to {end_index}')
-
-        tmp_df = spark.sql(f'''
-            select *
-            from nyc_taxi_stream
-            where (nyc_taxi_stream.index >= {start_index}) and (nyc_taxi_stream.index < {end_index})
-        ''')
-        (
-            tmp_df.drop('index', 'year', 'month')
-            .write
-            .format("jdbc")
-            .option("url", f"jdbc:postgresql://{host}:5432/{os.getenv('COM_DB_NAME')}")
-            .option("dbtable", "nyc_taxi_stream")
-            .option("user", os.getenv('COM_DB_USER'))
-            .option("password", os.getenv('COM_DB_PASSWORD'))
-            .option("driver", "org.postgresql.Driver")
-            .mode("append")
-            .save()
-        )
-    return total_rows
 
 def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000, mode:str='batch'):
     # read parquet
@@ -181,16 +145,17 @@ def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000, 
     df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
 
     # insert data into postgres
-    n_write = 10
     if mode=='stream':
-        return _insert_stream(spark, df, host)
+        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=10, host=host, target_table='nyc_taxi_stream', delay=10)
     elif mode=='batch':
-        # write 10 times to db
-        return _insert_batch(df, n_write, host)
+        return _insert_batch(df=df, n_chunk=10, host=host, target_table='nyc_taxi')
     elif mode=='both':
-        return _insert_stream(spark, df, host) + _insert_batch(df, n_write, host)
+        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=10, host=host, target_table='nyc_taxi_stream', delay=10) + _insert_batch(df=df, n_chunk=10, host=host, target_table='nyc_taxi')
 
-def main(host:str='localhost', mode:str='stream'):
+def main(host:str='localhost'):
+    params = parse_args()
+    mode = params['mode']
+
     pg = PostgresConnection(host)
     with pg as conn:
         # create_table(conn, 'public.nyc_taxi')
@@ -218,5 +183,5 @@ def main(host:str='localhost', mode:str='stream'):
             fout.close()
 
 if __name__=='__main__':
-    # main()
-    main(host=os.getenv('COM_DB_HOST'), mode='both')
+    main()
+    # main(host=os.getenv('COM_DB_HOST'))
