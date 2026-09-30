@@ -4,11 +4,11 @@
 
 from delta.tables import DeltaTable
 
-from bronze.ingest_bronze import SCHEMA, TABLE, create_session
+from bronze.ingest_bronze import SCHEMA, TABLE_BATCH, create_session
 
 
-def optimize():
-    delta_table = DeltaTable.forName(create_session(), f"{SCHEMA}.{TABLE}")
+def optimize(target_table):
+    delta_table = DeltaTable.forName(create_session(), target_table)
 
     delta_table.optimize().executeCompaction()
 
@@ -18,4 +18,4 @@ def optimize():
 
 if __name__=='__main__':
     # chạy 30p 1 lần để thấy được sự cải thiện (sau khi đã add 1 mớ file vào)
-    optimize()
+    optimize(target_table=f"{SCHEMA}.{TABLE_BATCH}")
