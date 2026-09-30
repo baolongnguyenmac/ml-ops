@@ -41,9 +41,9 @@ restart-i:
 up-ib:
 	$(INFRA_COMPOSE_CMD) up lh-metastore trino company_db -d
 
-## infra - stream processing
-up-is:
-	$(INFRA_COMPOSE_CMD) up company_db broker schema-registry connect control-center ksqldb-server rest-proxy -d
+# ## infra - stream processing: Stream sẽ dùng hết các service của infra nên chỉ cần start hết lên
+# up-is:
+# 	$(INFRA_COMPOSE_CMD) up company_db broker schema-registry connect control-center ksqldb-server rest-proxy -d
 
 # dependencies
 compile:

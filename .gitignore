@@ -2,6 +2,7 @@ tmp*
 *.parquet
 data
 *.jar
+spark/checkpoint
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
