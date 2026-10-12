@@ -15,7 +15,7 @@ with DAG(
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
 ) as dag:
-    setup_dim_date = DockerOperator(
+    setup_gold = DockerOperator(
         task_id='gold.setup_gold',
         api_version='auto',
         mount_tmp_dir=False,
@@ -75,7 +75,5 @@ with DAG(
         environment={
             "PYTHONUNBUFFERED": 1
         },
-        command=['bash', '-c', 'pwd && dbt deps && dbt seed'],
+        command=['bash', '-c', 'pwd && dbt snapshot && dbt deps && dbt seed'],
     )
-
-    [setup_dim_date, setup_deps_seed]

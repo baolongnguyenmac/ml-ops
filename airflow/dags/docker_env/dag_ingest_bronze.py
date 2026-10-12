@@ -12,7 +12,8 @@ with DAG(
     dag_display_name='Ingest Bronze',
     description='Run Ingest Bronze via Airflow',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    schedule='*/2 * * * *',
+    # schedule='*/2 * * * *',
+    schedule=None,
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
@@ -58,5 +59,5 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m bronze.ingest_bronze',
+        command='python -m bronze.ingest_bronze --mode batch',
     )

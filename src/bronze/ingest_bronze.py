@@ -185,16 +185,9 @@ def ingest_bronze(
     # phải update cả silver & gold nữa
     df = spark.sql(f'''
         select * from nyc_taxi
-        where source_created_datetime <= (
-            select max(source_created_datetime)
-            from (
-                select * from nyc_taxi
-                where source_created_datetime > timestamp '{watermark}'
-                order by source_created_datetime asc
-                limit {140_000*3}
-            )
-        ) and source_created_datetime > timestamp '{watermark}'
+        where source_created_datetime >= timestamp '{watermark}'
         and source_created_datetime < '{batch_start_ts!s}'
+        limit {140_000*3}
     ''')
 
     # process
@@ -331,7 +324,7 @@ def main(lh_host:str='localhost', db_host:str='localhost'):
             previous_watermark = list_dates[0].strip()
             fi.close()
 
-        print(f'\n=== Start ingest from: source_created_datetime (watermark) > {previous_watermark} ===\n')
+        print(f'\n=== Start ingest from: source_created_datetime (watermark) >= {previous_watermark} ===\n')
 
         target_table = f'{SCHEMA}.{TABLE_BATCH}'
 
@@ -371,9 +364,9 @@ def main(lh_host:str='localhost', db_host:str='localhost'):
         )
 
 if __name__=='__main__':
-    main()
-    # main(
-    #     lh_host=os.getenv('LH_METASTORE_HOST'),
-    #     db_host=os.getenv('COM_DB_HOST')
-    # )
+    # main()
+    main(
+        lh_host=os.getenv('LH_METASTORE_HOST'),
+        db_host=os.getenv('COM_DB_HOST')
+    )
 

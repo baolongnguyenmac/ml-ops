@@ -11,12 +11,7 @@ from pyspark.sql import types as T
 from bronze.ingest_bronze import SCHEMA as BRONZE_SCHEMA
 from bronze.ingest_bronze import TABLE_BATCH as BRONZE_TABLE_BATCH
 from bronze.ingest_bronze import TABLE_STREAM as BRONZE_TABLE_STREAM
-from silver.silver_map import (
-    payment_map,
-    rate_code_id_map,
-    store_fwd_flag_map,
-    vendor_id_map,
-)
+from silver.silver_map import *
 from silver.valid_silver import post_validate_silver
 from utils.utils import _get_table_version, check_date, parse_args
 
@@ -95,6 +90,11 @@ def _transform(df:DataFrame)->DataFrame:
         .withColumn('payment_type', F.lower(F.trim(F.col('payment_type'))))
         .replace(payment_map, subset='payment_type')
     )
+    # payment_type_id
+    df = (
+        df.withColumn('payment_type_id', F.col('payment_type'))
+        .replace(inverse_payment_map, subset='payment_type_id')
+    )
 
     # drop outlier for `passenger_count`
     df = df.filter(
@@ -112,6 +112,11 @@ def _transform(df:DataFrame)->DataFrame:
         .replace(rate_code_id_map, subset='rate_code_id')
         .withColumnRenamed('rate_code_id', 'rate_code')
     )
+    # rate_code_id
+    df = (
+        df.withColumn('rate_code_id', F.col('rate_code'))
+        .replace(inverse_rate_code_id_map, subset='rate_code_id')
+    )
 
     # store_and_fwd_flag
     df = (
@@ -119,13 +124,23 @@ def _transform(df:DataFrame)->DataFrame:
         .withColumn('store_and_fwd_flag', F.lower(F.trim(F.col('store_and_fwd_flag'))))
         .replace(store_fwd_flag_map, subset='store_and_fwd_flag')
     )
+    # store_and_fwd_flag_id
+    df = (
+        df.withColumn('store_and_fwd_id', F.col('store_and_fwd_flag'))
+        .replace(inverse_store_fwd_flag_map, subset='store_and_fwd_id')
+    )
 
     # assign int id for vendor (instead of using string)
     df = (
         df
-        .withColumnRenamed('vendor_id', 'vendor')
-        .withColumn('vendor', F.lower(F.trim(F.col('vendor'))))
-        .replace(vendor_id_map, subset='vendor')
+        .withColumnRenamed('vendor_id', 'vendor_name')
+        .withColumn('vendor_name', F.lower(F.trim(F.col('vendor_name'))))
+        .replace(vendor_id_map, subset='vendor_name')
+    )
+    # vendor_id
+    df = (
+        df.withColumn('vendor_id', F.col('vendor_name'))
+        .replace(inverse_vendor_id_map, subset='vendor_id')
     )
 
     # add audit fields of silver zone
@@ -224,16 +239,9 @@ def ingest_silver(
     batch_start_ts = datetime.now(timezone.utc)
     df = spark.sql(f'''
         select * from nyc_taxi
-        where bronze_created_datetime <= (
-            select max(bronze_created_datetime)
-            from (
-                select * from nyc_taxi
-                where bronze_created_datetime > timestamp '{watermark}'
-                order by bronze_created_datetime asc
-                limit {140_000*3}
-            )
-        ) and bronze_created_datetime > timestamp '{watermark}'
+        where bronze_created_datetime >= timestamp '{watermark}'
         and bronze_created_datetime < '{batch_start_ts!s}'
+        limit {140_000*3}
     ''')
 
     # process
@@ -306,7 +314,7 @@ def main(lh_host:str='localhost'):
             previous_watermark = list_dates[0].strip()
             fi.close()
 
-        print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_watermark} ===\n')
+        print(f'\n=== Start ingest from bronze_created_datetime (watermark) >= {previous_watermark} ===\n')
         source_table = f'{BRONZE_SCHEMA}.{BRONZE_TABLE_BATCH}'
         target_table = f'{SCHEMA}.{TABLE_BATCH}'
         current_watermark, source_count, current_version = ingest_silver(
@@ -345,5 +353,5 @@ def main(lh_host:str='localhost'):
         )
 
 if __name__=='__main__':
-    main()
-    # main(lh_host=os.getenv('LH_METASTORE_HOST'))
+    # main()
+    main(lh_host=os.getenv('LH_METASTORE_HOST'))

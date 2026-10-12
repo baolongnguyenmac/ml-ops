@@ -57,7 +57,7 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m bronze.ingest_bronze',
+        command='python -m bronze.ingest_bronze --mode batch',
     )
 
     silver_ingestion = DockerOperator(
@@ -94,10 +94,10 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m silver.ingest_silver',
+        command='python -m silver.ingest_silver --mode batch',
     )
 
-    setup_dim_date = DockerOperator(
+    setup_gold = DockerOperator(
         task_id='gold.setup_gold',
         api_version='auto',
         mount_tmp_dir=False,
@@ -226,10 +226,11 @@ with DAG(
         environment={
             "PYTHONUNBUFFERED": 1
         },
-        command=['bash', '-c', 'pwd && dbt run && dbt test'],
+        command=['bash', '-c', 'pwd && dbt snapshot && dbt run && dbt test'],
     )
 
     start = EmptyOperator(task_id="start_pipeline")
     end = EmptyOperator(task_id="end_pipeline")
-    # start >> bronze_ingestion >> silver_ingestion >> [setup_dim_date, ingest_staging, setup_deps_seed] >> dbt_transform >> end
-    bronze_ingestion >> silver_ingestion >> [setup_dim_date, ingest_staging, setup_deps_seed] >> dbt_transform
+    start >> bronze_ingestion >> silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform >> end
+    # bronze_ingestion >> silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform
+    # silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform

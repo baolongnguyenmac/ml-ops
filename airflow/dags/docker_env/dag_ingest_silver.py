@@ -54,5 +54,5 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m silver.ingest_silver',
+        command='python -m silver.ingest_silver --mode batch',
     )

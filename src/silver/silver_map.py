@@ -30,6 +30,15 @@ payment_map = {
 
     "6": "Voided trip",
 }
+inverse_payment_map = {
+    "Flex Fare trip": "0",
+    "Credit card": "1",
+    "Cash": "2",
+    "No charge": "3",
+    "Dispute": "4",
+    "Unknown": "5",
+    "Voided trip": "6",
+}
 
 store_fwd_flag_map = {
     # yes
@@ -46,6 +55,10 @@ store_fwd_flag_map = {
     'nan': None,
     '': None,
 }
+inverse_store_fwd_flag_map = {
+    'Yes': '1',
+    'No': '0',
+}
 
 vendor_id_map = {
     'dds': 'DDS',
@@ -60,6 +73,13 @@ vendor_id_map = {
 
     "7": "Helix",
 }
+inverse_vendor_id_map = {
+    "Creative Mobile Technologies, LLC": "1",
+    "Curb Mobility, LLC": "2",
+    "Myle Technologies Inc": "6",
+    "Helix": "7",
+    'DDS': 'dds',
+}
 
 rate_code_id_map = {
     "1.0": "Standard rate",
@@ -69,4 +89,13 @@ rate_code_id_map = {
     "5.0": "Negotiated fare",
     "6.0": "Group ride",
     "99.0": "Null/unknown",
+}
+inverse_rate_code_id_map = {
+    "Standard rate": "1",
+    "JFK": "2",
+    "Newark": "3",
+    "Nassau or Westchester": "4",
+    "Negotiated fare": "5",
+    "Group ride": "6",
+    "Null/unknown": "99",
 }
