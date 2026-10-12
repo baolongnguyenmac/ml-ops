@@ -23,6 +23,8 @@ ENV SPARK_PACKAGES="io.trino:trino-jdbc:480,\
 io.delta:delta-spark_4.1_2.13:4.3.0,\
 org.apache.hadoop:hadoop-aws:3.4.2,\
 software.amazon.awssdk:bundle:2.29.52,\
-org.postgresql:postgresql:42.7.11"
+org.postgresql:postgresql:42.7.11,\
+org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1,\
+org.apache.spark:spark-avro_2.13:4.1.1"
 RUN spark-submit --packages "${SPARK_PACKAGES}" \
     /dev/null 2>/dev/null || true
