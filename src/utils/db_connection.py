@@ -11,19 +11,19 @@ class PostgresConnection:
 
     def __init__(
         self,
-        host: str = "localhost",
-        port: int | None = None,
-        dbname: str | None = None,
-        user: str | None = None,
-        password: str | None = None,
+        host:str="localhost",
+        port:int=int(os.getenv('COM_DB_PORT')),
+        dbname:str=os.environ.get("COM_DB_NAME"),
+        user:str=os.environ.get("COM_DB_USER"),
+        password:str=os.environ.get("COM_DB_PASSWORD"),
     ):
         self.host = host
-        self.port = port or int(os.getenv('COM_DB_PORT'))
+        self.port = port
 
         # default: connect to data source
-        self.dbname = dbname or os.environ.get("COM_DB_NAME")
-        self.user = user or os.environ.get("COM_DB_USER")
-        self.password = password or os.environ.get("COM_DB_PASSWORD")
+        self.dbname = dbname
+        self.user = user
+        self.password = password
         self._conn: connection | None = None
 
     def connect(self) -> connection:
