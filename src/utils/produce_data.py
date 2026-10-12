@@ -72,7 +72,7 @@ def create_table(conn, table_name:str):
     with conn.cursor() as cur:
         cur.execute(query)
     conn.commit()
-    print(f"Table '{table_name}' created successfully.")
+    print(f"\nTable '{table_name}' created successfully.\n")
 
 def _resolve_mapping(df_columns: str) -> dict:
     """Tìm schema mapping khớp với columns của file."""
@@ -115,7 +115,10 @@ def _insert_batch(df:DataFrame, n_chunk:int, host:str, target_table:str, delay:i
     print(f'\nPush data to table {target_table}\n')
 
     total_inserted = 0
-    chunks = df.randomSplit(weights=[1.]*n_chunk, seed=42)
+    if n_chunk != 1:
+        chunks = df.randomSplit(weights=[1.]*n_chunk, seed=42)
+    else:
+        chunks = [df]
     for idx, chunk in enumerate(chunks):
         # insert to db
         print(f'\tInsert chunk {idx+1}')
@@ -144,13 +147,16 @@ def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000, 
     df = transform_data(df.sample(fraction=fraction, seed=42))
     df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
 
+    target_table_batch = 'public.nyc_taxi'
+    target_table_stream = 'public.nyc_taxi_stream'
+
     # insert data into postgres
     if mode=='stream':
-        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=10, host=host, target_table='nyc_taxi_stream', delay=10)
+        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=5, host=host, target_table=target_table_stream, delay=5)
     elif mode=='batch':
-        return _insert_batch(df=df, n_chunk=10, host=host, target_table='nyc_taxi')
+        return _insert_batch(df=df, n_chunk=1, host=host, target_table=target_table_batch)
     elif mode=='both':
-        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=10, host=host, target_table='nyc_taxi_stream', delay=10) + _insert_batch(df=df, n_chunk=10, host=host, target_table='nyc_taxi')
+        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=5, host=host, target_table=target_table_stream, delay=5) + _insert_batch(df=df, n_chunk=1, host=host, target_table=target_table_batch)
 
 def main(host:str='localhost'):
     params = parse_args()
@@ -158,7 +164,7 @@ def main(host:str='localhost'):
 
     pg = PostgresConnection(host)
     with pg as conn:
-        # create_table(conn, 'public.nyc_taxi')
+        create_table(conn, 'public.nyc_taxi')
         create_table(conn, 'public.nyc_taxi_stream')
 
     spark = create_session()
@@ -176,12 +182,12 @@ def main(host:str='localhost'):
     n_new_rows = insert_parquet(spark=spark, host=host, filepath=filepath, mode=mode)
     print(f'\nInserted: {n_new_rows} rows from {target_file}\n')
 
-    # write the rest back the file
-    if mode=='both':
+    # write the tracking file
+    if mode=='both' or mode=='batch':
         with open('./tracking/track_produce_data', 'w') as fout:
             fout.writelines(parquet_files)
             fout.close()
 
 if __name__=='__main__':
-    main()
-    # main(host=os.getenv('COM_DB_HOST'))
+    # main()
+    main(host=os.getenv('COM_DB_HOST'))
