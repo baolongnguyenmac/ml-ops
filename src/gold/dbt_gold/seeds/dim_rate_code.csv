@@ -1,8 +1,0 @@
-surrogate_id,business_rate_code_id,rate_code
-1,"1","Standard rate"
-2,"2","JFK"
-3,"3","Newark"
-4,"4","Nassau or Westchester"
-5,"5","Negotiated fare"
-6,"6","Group ride"
-7,"99","Null/unknown"

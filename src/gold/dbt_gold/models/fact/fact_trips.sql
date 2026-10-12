@@ -16,7 +16,7 @@
 -- ]
 
 with source as (
-    select * from {{ source('staging', 'nyc_taxi_staging') }}
+    select * from {{ source('staging', 'nyc_taxi') }}
     {% if is_incremental() %}
     -- where year >= (select max(year)  from {{ this }})
     --     and month >= (select max(month) from {{ this }})
@@ -43,12 +43,12 @@ select
     s.record_key,
 
     -- FK
-    pu_dl.surrogate_id as surrogate_pu_location_id,
-    do_dl.surrogate_id as surrogate_do_location_id,
-    dp.surrogate_id as surrogate_payment_id,
-    dr.surrogate_id as surrogate_rate_code_id,
-    dsf.surrogate_id as surrogate_storage_fwd_id,
-    dv.surrogate_id as surrogate_vendor_id,
+    pu_dl.location_key as pu_location_key,
+    do_dl.location_key as do_location_key,
+    dp.dbt_scd_id as payment_type_key,
+    dr.dbt_scd_id as rate_code_key,
+    dsf.store_and_fwd_key as store_and_fwd_key,
+    dv.dbt_scd_id as vendor_key,
     cast(to_char(date_trunc('hour', s.pickup_datetime),  'yyyymmddhh24') as int) as pickup_date_key,
     cast(to_char(date_trunc('hour', s.dropoff_datetime), 'yyyymmddhh24') as int) as dropoff_date_key,
 
@@ -86,12 +86,12 @@ select
     current_timestamp as gold_created_datetime
 
 from source as s
-    left join dim_location as pu_dl on s.pu_location_id=pu_dl.business_location_id
-    left join dim_location as do_dl on s.do_location_id=do_dl.business_location_id
-    left join dim_payment_type as dp on s.payment_type=dp.payment_type
-    left join dim_rate_code as dr on s.rate_code=dr.rate_code
-    left join dim_store_fwd as dsf on s.store_and_fwd_flag=dsf.store_and_fwd_flag
-    left join dim_vendor as dv on s.vendor=dv.vendor_name
+    left join dim_location as pu_dl on s.pu_location_id=pu_dl.location_id
+    left join dim_location as do_dl on s.do_location_id=do_dl.location_id
+    left join dim_payment_type as dp on s.payment_type_id=dp.payment_type_id
+    left join dim_rate_code as dr on s.rate_code_id=dr.rate_code_id
+    left join dim_store_fwd as dsf on s.store_and_fwd_id=dsf.store_and_fwd_id
+    left join dim_vendor as dv on s.vendor_id=dv.vendor_id
 
 {% if is_incremental() %}
 -- where s.silver_updated_datetime > (select max(silver_updated_datetime) from {{ this }})

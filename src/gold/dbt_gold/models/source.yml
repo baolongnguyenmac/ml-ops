@@ -1,6 +1,9 @@
 sources:
   - name: staging
     database: gold
-    schema: public
+    schema: staging
     tables:
-      - name: nyc_taxi_staging
+      - name: nyc_taxi
+      - name: dim_vendor
+      - name: dim_payment_type
+      - name: dim_rate_code

@@ -1,8 +1,0 @@
-surrogate_id,business_payment_id,payment_type
-0,"0","Flex Fare trip"
-1,"1","Credit card"
-2,"2","Cash"
-3,"3","No charge"
-4,"4","Dispute"
-5,"5","Unknown"
-6,"6","Voided trip"

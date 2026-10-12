@@ -72,7 +72,7 @@ def create_gold_schema(filepath:str='./sql/gold_schema.sql'):
 
     print('Created schema for Gold zone')
 
-def create_dim_date(start:str, end:str):
+def seed_dim_date(start:str, end:str):
     # Check if existing dim_date covers the required range
     need_refresh = False
     with PostgresConnection(host=os.getenv('COM_DB_HOST'), dbname=os.getenv('COM_GOLD_DB_NAME')) as conn, conn.cursor() as cur:
@@ -102,5 +102,5 @@ if __name__=='__main__':
 
     # generate data for dim_date
     start='2009-01-01 00:00:00+00'
-    end='2025-12-31 23:59:59+00'
-    create_dim_date(start, end)
+    end='2035-12-31 23:59:59+00'
+    seed_dim_date(start, end)
