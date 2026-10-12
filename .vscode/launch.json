@@ -22,6 +22,7 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
             },
+            "args": ["--mode", "stream"]
         },
         {
             "name": "ingest silver",
@@ -31,6 +32,8 @@
             "env": {
                 "PYTHONPATH": "./src"
             },
+            "args": ["--mode", "stream"]
+
         },
         {
             "name": "ingest gold staging",
