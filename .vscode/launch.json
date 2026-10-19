@@ -44,5 +44,14 @@
                 "PYTHONPATH": "${workspaceFolder}/src"
             },
         },
+        {
+            "name": "ingest gold stream",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gold.ingest_stream",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+        },
     ]
 }
