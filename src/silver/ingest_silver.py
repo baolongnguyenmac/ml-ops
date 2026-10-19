@@ -29,6 +29,7 @@ S3_SILVER_BATCH_PATH = os.path.join(os.getenv('S3_URI'), SCHEMA)
 TABLE_STREAM = "nyc_taxi_stream"
 S3_SILVER_STREAM_PATH = os.path.join(os.getenv('S3_URI'), f'{SCHEMA}_stream')
 CHECKPOINT = '/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint/silver_stream'
+# CHECKPOINT = os.path.join(os.getenv('S3_URI'), 'checkpoint', f'{SCHEMA}_stream')
 
 def create_session(lh_host:str='localhost', checkpoint:str=CHECKPOINT) -> SparkSession:
     return (
@@ -54,6 +55,8 @@ def create_session(lh_host:str='localhost', checkpoint:str=CHECKPOINT) -> SparkS
         # delta lake support
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        # # enable CDF (aka CDC) for all delta tables
+        # .config("spark.databricks.delta.properties.defaults.enableChangeDataFeed", "true")
 
         # allow rewrite partitions
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
@@ -68,6 +71,7 @@ def create_session(lh_host:str='localhost', checkpoint:str=CHECKPOINT) -> SparkS
         # stream support
         .config('spark.sql.streaming.checkpointLocation', checkpoint)
         .config('spark.sql.streaming.forceDeleteTempCheckpointLocation', 'true')
+        .config('spark.databricks.delta.properties.defaults.enableChangeDataFeed', 'true') # enable built-in CDC of delta lake (aka CDF)
 
         # create schema using spark (instead of using trino)
         .config("spark.sql.warehouse.dir", os.path.join(os.getenv('S3_URI'), SCHEMA_STORE))
@@ -151,9 +155,9 @@ def _transform(df:DataFrame)->DataFrame:
     )
 
     # create primary key (sorted columns for deterministic hash)
-    # đáng nhé nên thêm `silver_created_datetime` vào `audit_cols` nhưng tôi muốn tạo ra các records bị update giả
+    # đáng nhẽ nên thêm `silver_created_datetime` vào `audit_cols` nhưng tôi muốn tạo ra các records bị update giả
     # nếu thêm `silver_created_datetime` thì data sẽ không được update nếu chạy lại (vì đây là dữ liệu tĩnh nên tôi muốn chạy lại để thử logic upsert)
-    audit_cols = {'year', 'month', 'source_file', 'source_created_datetime', 'bronze_created_datetime', 'silver_updated_datetime'}
+    audit_cols = {'year', 'month', 'record_key', 'source_file', 'source_created_datetime', 'bronze_created_datetime', 'silver_updated_datetime'}
     df = df.withColumn(
         'content_hash',
         F.sha2(F.concat_ws(
@@ -165,12 +169,14 @@ def _transform(df:DataFrame)->DataFrame:
     # de-dup
     return df.dropDuplicates(['content_hash'])
 
-def _insert_batch(df:DataFrame, target_table:str, s3_path:str)->int:
+def _insert_batch(df:DataFrame, target_table:str, s3_path:str, cdf:bool=False)->int:
+    cdf = 'true' if cdf else 'false'
     (
         df
         .repartition("year", "month") # prevent small files problem
         .write
         .option("delta.enableDeletionVectors", "true") # have deletion vectors on
+        .option("delta.enableChangeDataFeed", cdf) # have cdf (built-in CDC of delta lake) on/off
         .format('delta')
         .partitionBy("year", "month")
         .mode("append")
@@ -212,15 +218,26 @@ def _upsert_batch(spark:SparkSession, df:DataFrame, target_table:str):
     source_count = df.count()
     return target_before_count, target_after_count, source_count
 
-def _save_batch(spark:SparkSession, df:DataFrame, target_table:str, s3_path:str)->tuple[int, int]:
+def _save_batch(spark:SparkSession, df:DataFrame, target_table:str, s3_path:str, cdf:bool=False)->tuple[int, int]:
+    """Save batch, but apply for both batch and streaming mode
+
+    Args:
+        spark (SparkSession): Spark session
+        df (DataFrame): Saved dataframe
+        target_table (str): Table name to be saved data into
+        s3_path (str): S3 path of the table
+        cdf (bool, optional): Enable CDF in delta table, only apply for streaming table. Defaults to False.
+
+    Returns:
+        tuple[int, int]: Return number of saved records and version of new table or -1 if there's no change in the table
+    """
     previous_version = _get_table_version(spark, target_table)
+    print(f"\nUpsert into table '{target_table}'")
     if previous_version == -1:
-        source_count = _insert_batch(df, target_table, s3_path)
-        print(f"Table registered as '{target_table}' → {s3_path}\n")
+        source_count = _insert_batch(df, target_table, s3_path, cdf)
         print(f"\tInserted {source_count} rows")
     else:
         target_before_count, target_after_count, source_count = _upsert_batch(spark, df, target_table)
-        print(f"Table registered as '{target_table}' → {S3_SILVER_BATCH_PATH}")
         print(f"\tTarget before operation: {target_before_count} rows. Target after operation: {target_after_count} rows")
         print(f"\tUpdated {target_before_count + source_count - target_after_count} rows")
         print(f"\tInserted {target_after_count - target_before_count} rows")
@@ -253,6 +270,7 @@ def ingest_silver(
 
     # save to delta lake
     if not silver_df.isEmpty():
+        print(f"\nTable registered as '{target_table}' → {s3_path}\n")
         source_count, current_version = _save_batch(spark, silver_df, target_table, s3_path)
         new_watermark = str(silver_df.select(F.max('bronze_created_datetime')).collect()[0][0])
     else:
@@ -282,10 +300,17 @@ def ingest_stream_silver(
     silver_df = _transform(bronze_df)
 
     def _save_stream(batch_df:DataFrame, batch_id:int):
+        """Save stream under `forEachBatch` function
+
+        Args:
+            batch_df (DataFrame): Batch
+            batch_id (int): Batch id
+        """
         if not batch_df.isEmpty():
-            source_count, current_version = _save_batch(spark, batch_df, target_table, target_s3_path)
-            # nếu có thay đổi và hên xui (20%) thì kiểm tra
-            if current_version != -1 and randint(1, 10)%5 == 0:
+            # save batch with CDF turned on
+            source_count, current_version = _save_batch(spark, batch_df, target_table, target_s3_path, True)
+            # nếu có thay đổi và hên xui (10%) thì kiểm tra
+            if current_version != -1 and randint(1, 10) == 1:
                 post_validate_silver(spark, target_table, source_count, current_version)
 
     # create schema in lakehouse
@@ -296,11 +321,11 @@ def ingest_stream_silver(
     query = (
         silver_df.writeStream
         .foreachBatch(_save_stream)
-        .trigger(processingTime='30 seconds')
+        .trigger(processingTime='55 seconds')
         .option("checkpointLocation", checkpoint)
         .start()
     )
-    print(f"Table registered as '{target_table}' → {target_s3_path}")
+    print(f"\nTable registered as '{target_table}' → {target_s3_path}\n")
     query.awaitTermination()
 
 def main(lh_host:str='localhost'):
