@@ -23,11 +23,12 @@ S3_BRONZE_BATCH_PATH = os.path.join(os.getenv('S3_URI'), SCHEMA)
 
 # stream
 TABLE_STREAM  = "nyc_taxi_stream"
-BOOTSTRAP_SERVERS = 'localhost:9092'
-SCHEMA_REGISTRY = 'http://localhost:8081'
+BOOTSTRAP_SERVERS = 'broker:29092'
+SCHEMA_REGISTRY = 'http://schema-registry:8081'
 S3_BRONZE_STREAM_PATH = os.path.join(os.getenv('S3_URI'), f'{SCHEMA}_stream')
 TOPIC = 'source.public.nyc_taxi_stream'
 CHECKPOINT = '/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint/bronze_stream'
+# CHECKPOINT = os.path.join(os.getenv('S3_URI'), 'checkpoint', f'{SCHEMA}_stream')
 
 def create_session(lh_host:str='localhost', checkpoint:str=CHECKPOINT) -> SparkSession:
     """Create spark session for stream and batch processing
@@ -129,6 +130,7 @@ def _save_batch(spark:SparkSession, df:DataFrame, target_table:str, s3_path:str)
     Returns:
         int: Version of the current table
     """
+    print(f"\nAppend to table '{target_table}'")
     previous_version = _get_table_version(spark, target_table)
     (
         df.repartition("year", "month") # prevent small files problem
@@ -141,8 +143,7 @@ def _save_batch(spark:SparkSession, df:DataFrame, target_table:str, s3_path:str)
         .saveAsTable(target_table)   # đăng ký luôn với Hive metastore
     )
     source_count = df.count()
-    print(f"Table registered as '{target_table}' → {s3_path}")
-    print(f"\tInserted {source_count} rows\n")
+    print(f"\n\tInserted {source_count} rows\n")
 
     current_version = _get_table_version(spark, target_table)
 
@@ -199,6 +200,7 @@ def ingest_bronze(
 
     # save to delta lake
     if not partition_bronze_df.isEmpty():
+        print(f"\nTable registered as '{target_table}' → {s3_path}\n")
         source_count, current_version = _save_batch(spark, partition_bronze_df, target_table, s3_path)
         new_watermark = str(df.select(F.max('source_created_datetime')).collect()[0][0])
     else:
@@ -212,12 +214,12 @@ def ingest_bronze(
         current_version
     )
 
-def _get_schema_from_registry(subject:str, schema_registry_url:str="http://localhost:8081")->str:
+def _get_schema_from_registry(subject:str, schema_registry_url:str)->str:
     """Get the schema from schema-registry
 
     Args:
         subject (str): {topic}-{value/key}. The name specifying the key/value format for msg in topic
-        schema_registry_url (str, optional): Schema-registry endpoint. Defaults to "http://localhost:8081".
+        schema_registry_url (str, optional): Schema-registry endpoint
 
     Returns:
         str: dict-form of schema and other information got from schema-registry
@@ -225,13 +227,13 @@ def _get_schema_from_registry(subject:str, schema_registry_url:str="http://local
     client = SchemaRegistryClient({"url": schema_registry_url})
     return client.get_latest_version(subject).to_dict()
 
-def _parse_cdc_event(df:DataFrame, topic:str, schema_registry_url:str='http://localhost:8081'):
+def _parse_cdc_event(df:DataFrame, topic:str, schema_registry_url:str):
     """Parse Avro format to readable form and put everything to a Dataframe. Req: The 
 
     Args:
         df (DataFrame): The raw dataframe
         topic (str): Topic to get schema from registry
-        schema_registry_url (str, optional): Schema endpoint. Defaults to 'http://localhost:8081'.
+        schema_registry_url (str, optional): Schema endpoint
 
     Returns:
         Dataframe: The parsed dataframe
@@ -294,8 +296,8 @@ def ingest_stream_bronze(
     def _save_stream(batch_df:DataFrame, batch_id:int):
         if not batch_df.isEmpty():
             source_count, current_version = _save_batch(spark, batch_df, target_table, target_s3_path)
-            # nếu có thay đổi và hên xui (20%) thì kiểm tra
-            if current_version != -1 and randint(1, 10)%5 == 0:
+            # nếu có thay đổi và hên xui (10%) thì kiểm tra
+            if current_version != -1 and randint(1, 10) == 1:
                 post_validate_bronze(spark, target_table, source_count, current_version)
 
     # create schema in lakehouse
@@ -310,7 +312,7 @@ def ingest_stream_bronze(
         .option('checkpointLocation', checkpoint)
         .start()
     )
-    print(f"Table registered as '{target_table}' → {target_s3_path}")
+    print(f"\nTable registered as '{target_table}' → {target_s3_path}\n")
     query.awaitTermination()
 
 def main(lh_host:str='localhost', db_host:str='localhost'):
