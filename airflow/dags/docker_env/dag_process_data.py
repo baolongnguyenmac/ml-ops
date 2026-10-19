@@ -12,6 +12,7 @@ with DAG(
     dag_display_name='Bronze >> Silver >> Gold',
     description='Walk data through Bronze >> Silver >> Gold',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
+    # schedule='*/1 * * * *',
     schedule=None,
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
@@ -229,8 +230,8 @@ with DAG(
         command=['bash', '-c', 'pwd && dbt snapshot && dbt run && dbt test'],
     )
 
-    start = EmptyOperator(task_id="start_pipeline")
-    end = EmptyOperator(task_id="end_pipeline")
-    start >> bronze_ingestion >> silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform >> end
-    # bronze_ingestion >> silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform
+    # start = EmptyOperator(task_id="start_pipeline")
+    # end = EmptyOperator(task_id="end_pipeline")
+    # start >> bronze_ingestion >> silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform >> end
+    bronze_ingestion >> silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform
     # silver_ingestion >> setup_gold >> [ingest_staging, setup_deps_seed] >> dbt_transform

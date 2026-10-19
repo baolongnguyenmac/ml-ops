@@ -7,10 +7,10 @@ from docker.types import Mount
 with DAG(
     dag_id='produce_data',
     dag_display_name='Produce Data',
-    description='Run Produce data via Airflow',
+    description='Simulate data source',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    # schedule='*/1 * * * *',
-    schedule=None,
+    schedule='*/1 * * * *',
+    # schedule=None,
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
@@ -53,5 +53,5 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m utils.produce_data --mode batch',
+        command='python -m utils.produce_data --mode stream',
     )

@@ -11,8 +11,8 @@ gold_asset = Asset("jdbc:postgresql://company_db:5432/gold")
 
 with DAG(
     dag_id='ingest_gold',
-    dag_display_name='Ingest Gold',
-    description='Run Ingest Gold via Airflow',
+    dag_display_name='Gold Modeling',
+    description='Modeling data from Silver to Gold zone',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     schedule=[silver_asset],
     # schedule='*/2 * * * *',

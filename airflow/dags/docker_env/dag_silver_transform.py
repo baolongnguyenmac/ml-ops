@@ -10,10 +10,11 @@ silver_asset = Asset(os.path.join(Variable.get("S3_URI"), 'silver'))
 
 with DAG(
     dag_id='ingest_silver',
-    dag_display_name='Ingest Silver',
-    description='Run Ingest Silver via Airflow',
+    dag_display_name='Silver Transformation',
+    description='Transform data from Bronze to Silver zone',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    schedule=[bronze_asset],
+    schedule=None,
+    # schedule=[bronze_asset],
     # schedule='*/2 * * * *',
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
@@ -25,7 +26,8 @@ with DAG(
         mount_tmp_dir=False,
         outlets=[silver_asset],
 
-        auto_remove='force',
+        auto_remove='never',
+        # auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
         image='longnb32/spark_env:v1.4',
@@ -43,6 +45,11 @@ with DAG(
                 source='/home/nblong/Dropbox/Project/ops/ml-ops/tracking',
                 type='bind'
             ),
+            Mount(
+                target='/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint',
+                type='bind'
+            ),
         ],
         environment={
             "AWS_ACCESS_KEY_ID": Variable.get("AWS_ACCESS_KEY_ID"),
@@ -54,5 +61,5 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m silver.ingest_silver --mode batch',
+        command='python -m silver.ingest_silver --mode stream',
     )

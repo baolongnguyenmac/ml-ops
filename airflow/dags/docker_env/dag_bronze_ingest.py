@@ -9,8 +9,8 @@ bronze_asset = Asset(os.path.join(Variable.get("S3_URI"), 'bronze'))
 
 with DAG(
     dag_id='ingest_bronze',
-    dag_display_name='Ingest Bronze',
-    description='Run Ingest Bronze via Airflow',
+    dag_display_name='Bronze Ingestion',
+    description='Ingest data from Source to Bronze zone',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     # schedule='*/2 * * * *',
     schedule=None,
@@ -24,7 +24,8 @@ with DAG(
         mount_tmp_dir=False,
         outlets=[bronze_asset],
 
-        auto_remove='force',
+        auto_remove='never',
+        # auto_remove='force',
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
         image='longnb32/spark_env:v1.4',
@@ -40,6 +41,11 @@ with DAG(
             Mount(
                 target='/app/tracking',
                 source='/home/nblong/Dropbox/Project/ops/ml-ops/tracking',
+                type='bind'
+            ),
+            Mount(
+                target='/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint',
+                source='/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint',
                 type='bind'
             ),
         ],
@@ -59,5 +65,5 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m bronze.ingest_bronze --mode batch',
+        command='python -m bronze.ingest_bronze --mode stream',
     )
