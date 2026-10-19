@@ -65,10 +65,22 @@ def _save_batch(df:DataFrame, db_host:str, target_table:str)->int:
     print(f"\nOverwrite table '{target_table}'\nInserted {source_count} rows\n")
     return source_count
 
-def upsert_staging_dim(source_df:DataFrame, target_table:str, db_host:str, set_cols:set[str], pk:str):
+def upsert_df(source_df:DataFrame, target_table:str, db_host:str, set_cols:set[str], pk:str, distinct:bool=True, audit_cols:set={}):
+    """Upsert a dataframe into a target table
+
+    Args:
+        source_df (DataFrame): Source dataframe
+        target_table (str): Target table name
+        db_host (str): Host of database
+        set_cols (set[str]): Set of columns to be inserted if the record is new
+        pk (str): Primary key, used to upsert
+        distinct (bool, optional): In case the source_df needs to be distinct (dim tables). Defaults to True.
+        audit_cols (set, optional): Set of audit columns, not to be updated. Defaults to {}.
+    """
+    if distinct:
+        source_df = source_df.select(*set_cols).distinct().dropna(subset=[pk])
     (
-        source_df.select(*set_cols).distinct().dropna(subset=[pk])
-        .write
+        source_df.write
         .format("jdbc")
         .option("url", f"jdbc:postgresql://{db_host}:{os.getenv('COM_DB_PORT')}/{os.getenv('COM_GOLD_DB_NAME')}")
         .option("dbtable", f'{target_table}_tmp')
@@ -76,10 +88,14 @@ def upsert_staging_dim(source_df:DataFrame, target_table:str, db_host:str, set_c
         .option("password", os.getenv('COM_DB_PASSWORD'))
         .option("driver", "org.postgresql.Driver")
         .mode("overwrite")
+        .option("truncate", "true") # to keep schema consistent but i'mma drop it anyway
         .save()
     )
+    source_count = source_df.count()
+    print(f"\nUpsert into table '{target_table}'")
+    print(f"\tOverwrote {source_count} rows to table '{target_table}_tmp'\n")
 
-    updated_cols = set_cols - {pk}
+    updated_cols = set_cols - {pk} - audit_cols
     updated_set = [f'{col} = EXCLUDED.{col}' for col in updated_cols]
 
     query = f'''
@@ -87,14 +103,14 @@ def upsert_staging_dim(source_df:DataFrame, target_table:str, db_host:str, set_c
         select {",".join(set_cols)}
         from {target_table}_tmp
         on conflict ({pk}) do update
-            set {", ".join(updated_set)}
+            set {", ".join(updated_set)};
     '''
 
     pg = PostgresConnection(host=db_host, dbname=os.getenv('COM_GOLD_DB_NAME'))
     with pg as conn, conn.cursor() as cur:
         cur.execute(query)
-        cur.execute(f'drop table {target_table}_tmp')
         conn.commit()
+    print(f"\tUpserted {source_count} rows into table '{target_table}'\n")
 
 def ingest_staging(
     spark:SparkSession,
@@ -122,14 +138,15 @@ def ingest_staging(
     print(f'\nCreated {SCHEMA}\n')
 
     if not df.isEmpty():
+        print(f"\nUpsert into dim tables from table '{source_table}'\n")
         # overwrite staging.nyc_taxi (used for fact_trips)
         source_count = _save_batch(df, db_host, target_table)
         new_watermark = str(df.select(F.max('silver_updated_datetime')).collect()[0][0])
 
         # upsert dim_vendor, dim_payment_type, dim_rate_code
-        upsert_staging_dim(df, f'{SCHEMA}.{DIM_PAYMENT}', db_host, {'payment_type_id', 'payment_type'}, 'payment_type_id')
-        upsert_staging_dim(df, f'{SCHEMA}.{DIM_VENDOR}', db_host, {'vendor_id', 'vendor_name'}, 'vendor_id')
-        upsert_staging_dim(df, f'{SCHEMA}.{DIM_RATE_CODE}', db_host, {'rate_code_id', 'rate_code'}, 'rate_code_id')
+        upsert_df(df, f'{SCHEMA}.{DIM_PAYMENT}', db_host, {'payment_type_id', 'payment_type'}, 'payment_type_id')
+        upsert_df(df, f'{SCHEMA}.{DIM_VENDOR}', db_host, {'vendor_id', 'vendor_name'}, 'vendor_id')
+        upsert_df(df, f'{SCHEMA}.{DIM_RATE_CODE}', db_host, {'rate_code_id', 'rate_code'}, 'rate_code_id')
     else:
         source_count = 0
         new_watermark = watermark
