@@ -27,7 +27,7 @@
     - Data source is simulated for batch job and streaming job. Batch job processes/transforms data based on watermark. Streaming job applies same transform logic on data obtained by CDC (Debezium or CDF). Serving layer is union from historical batch data and newest data from speed layer.
 
     - Medallion architecture in this work
-        - Bronze: **Append-only, contain raw data**, partition by month, ready to re-run
+        - Bronze: **Append-only, contain raw data, partition by month**, ready to re-run
         - Silver: Data from bronze is cleaned, transformed, deduplicated, and **upsert into Silver**
         - Gold: **Star schema is adopt**. Data from Silver is modeled and upsert into Gold zone. Maintain **SCD type 2 for dim tables**
 
@@ -68,67 +68,69 @@
 
 ### How-to guide
 
-0. A brief about architecture
+#### A brief about architecture
 
-    - [Medallion architecture](https://dev.to/datanestdigital/medallion-architecture-in-databricks-a-complete-implementation-guide-2lb9)
-    - [Real-time processing](https://dev.to/datanestdigital/real-time-data-streaming-with-apache-kafka-and-spark-c4l)
+- [Medallion architecture](https://dev.to/datanestdigital/medallion-architecture-in-databricks-a-complete-implementation-guide-2lb9)
+- [Real-time processing](https://dev.to/datanestdigital/real-time-data-streaming-with-apache-kafka-and-spark-c4l)
 
-1. Start infrastructure
+#### Start infrastructure
 
-    - Ref for **building infra and preparing env variables**
-        - [Airflow](https://github.com/apache/airflow/blob/main/airflow-core/docs/howto/docker-compose/docker-compose.yaml)
-        - [Confluent](https://github.com/confluentinc/cp-all-in-one/blob/8.2.0-post/cp-all-in-one/docker-compose.yml)
-        - Read `./.env_file/*.env.example` to create `./.env_file/*.env`
+- Ref for **building infra and preparing env variables**
+    - [Airflow](https://github.com/apache/airflow/blob/main/airflow-core/docs/howto/docker-compose/docker-compose.yaml)
+    - [Confluent](https://github.com/confluentinc/cp-all-in-one/blob/8.2.0-post/cp-all-in-one/docker-compose.yml)
+    - Read `./.env_file/*.env.example` to create `./.env_file/*.env`
 
-    - There are 2 `*-docker-compose.yml` files to be started. One runs `airflow`, the other creates infra for batch and speed layer. The `*.env` files have been referred in those compose files
+- There are 2 `*-docker-compose.yml` files to be started. One runs `airflow`, the other creates infra for batch and speed layer. The `*.env` files have been referred in those compose files
 
-    - Read `Makefile` then run the following commands
+- Read `Makefile` then run the following commands
 
-        ```bash
-        make up-a & make up-i
-        ```
+    ```bash
+    make up-a & make up-i
+    ```
 
-    - Once `airflow` has healthily started, import environment variables (`./.env_file/*.json`, refer to `./.env_file/*.json.example`) into it so its worker can work securely with the variables
+- Once `airflow` has healthily started, import environment variables (`./.env_file/*.json`, refer to `./.env_file/*.json.example`) into it so its worker can work securely with the variables
 
-    - **Build environment for jobs**
-        - Refer to `./airflow/dags/docker_env/Dockerfile` to build an env image
-        - This image is used as an environment to run all jobs in this work
+- **Build environment for jobs**
+    - Refer to `./airflow/dags/docker_env/Dockerfile` to build an env image
+    - This image is used as an environment to run all jobs in this work
 
-2. Batch layer
+#### Batch layer
 
-    ![Batch pipeline](./flow/batch_pipeline.png)
+![Batch pipeline](./flow/batch_pipeline.png)
 
-    - Ref for Delta lake
-        - Upsert: [Basic](https://delta.io/blog/2023-02-14-delta-lake-merge/), [Advanced](https://delta.io/blog/delta-lake-upsert/)
-        - Optimize: [Overview](https://delta.io/blog/delta-lake-optimize/), [Deletion Vectors](https://delta.io/blog/2023-07-05-deletion-vectors/), [Z Order](https://delta.io/blog/2023-06-03-delta-lake-z-order/)
-        - Schema: [Schema enforcement](https://delta.io/blog/2022-11-16-delta-lake-schema-enforcement/), [Schema evolution](https://delta.io/blog/2023-02-08-delta-lake-schema-evolution/)
+- Ref for Delta lake
+    - Upsert: [Basic](https://delta.io/blog/2023-02-14-delta-lake-merge/), [Advanced](https://delta.io/blog/delta-lake-upsert/)
+    - Optimize: [Overview](https://delta.io/blog/delta-lake-optimize/), [Deletion Vectors](https://delta.io/blog/2023-07-05-deletion-vectors/), [Z Order](https://delta.io/blog/2023-06-03-delta-lake-z-order/)
+    - Schema: [Schema enforcement](https://delta.io/blog/2022-11-16-delta-lake-schema-enforcement/), [Schema evolution](https://delta.io/blog/2023-02-08-delta-lake-schema-evolution/)
 
-    - Activate dag `Produce Data`, which have 3 modes: `stream`, `batch`, `both` (choose the suitable one based on purpose)
-    - Active dag `Bronze >> Silver >> Gold` to start batch layer
-        - Read the dag file to track the batch process, which starts from **loading data from source to Bronze zone (append-only); cleans, transforms, deduplicate data then upsert into Silver zone; modelings data and upsert into Gold zone**.
-        - Watermark will be generated in `./tracking`. Refer to `./tracking/*.backup` to understand how to initialize those watermarks
-        - Silver and Gold zone are built based on `merge` operator, so **feel free to re-run** (unless the schema is heavily damage)
-        - Gold zone is built by `dbt` as it's quite easy to setup. Read more about `dbt` [here](https://medium.com/@ahmealy/dbt-incremental-models-the-complete-guide-for-postgres-users-de18356a00a7)
+- Activate dag `Produce Data`, which have 3 modes: `stream`, `batch`, `both` (choose the suitable one based on purpose)
+- Active dag `Bronze >> Silver >> Gold` to start batch layer
+    - Read the dag file to track the batch process, which starts from **loading data from source to Bronze zone (append-only); cleans, transforms, deduplicate data then upsert into Silver zone; modelings data and upsert into Gold zone**.
+    - Watermark will be generated in `./tracking`. Refer to `./tracking/*.backup` to understand how to initialize those watermarks
+    - Silver and Gold zone are built based on `merge` operator, so **feel free to re-run** (unless the schema is heavily damage)
+    - Gold zone is built by `dbt` as it's quite easy to setup. Read more about `dbt` [here](https://medium.com/@ahmealy/dbt-incremental-models-the-complete-guide-for-postgres-users-de18356a00a7)
 
-    - Use `trino` to query delta table (setup via VSCode extension [DBCode](https://dbcode.io/) or just go straight into the container and query in there)
+- Use `trino` to query delta table (setup via VSCode extension [DBCode](https://dbcode.io/) or just go straight into the container and query in there)
 
-3. Speed layer
-    - Ref for Stream processing
-        - Spark Streaming: [Quick start](https://spark.apache.org/docs/latest/streaming/getting-started.html#structured-streaming-programming-guide-1), [Watermark in streaming](https://spark.apache.org/docs/latest/streaming/apis-on-dataframes-and-datasets.html#structured-streaming-programming-guide-1), [Spark - Kafka](https://spark.apache.org/docs/latest/streaming/structured-streaming-kafka-integration.html)
-        - Watermark in streaming - [Explanation](https://www.youtube.com/watch?v=XjlKGvUt2dY)
+#### Speed layer
 
-    - Add a CDC connector to capture changelog from Datasource and publish into a Kafka topic
-    - Trigger 3 dags: `Bronze Ingestion`, `Silver Transformation`, and `Gold Stream Modeling`. Note that
-        - Since they are stream jobs, these dags will `awaitTermination`
-        - `Bronze Ingestion` subscribes the CDC source. Since this job is append-only, **CDF (built-in CDC of DeltaLake) is not required**
-        - `Silver Transformation`: Read stream from Bronze zone, **transform and write data to Silver zone with CDF on**. Thus, later job can capture `_change_type` such as `insert` and `update_postimage`
-        - `Gold Stream Modeling`: Capture changelog from Silver zone, modeling them and overwrite to a temporary table (Postgres), then **upsert to the Serving table of speed layer**
-        - These jobs read data from the previous one. Thus, they will raise errors if the previous source doesn't exist
+- Ref for Stream processing
+    - Spark Streaming: [Quick start](https://spark.apache.org/docs/latest/streaming/getting-started.html#structured-streaming-programming-guide-1), [Watermark in streaming](https://spark.apache.org/docs/latest/streaming/apis-on-dataframes-and-datasets.html#structured-streaming-programming-guide-1), [Spark - Kafka](https://spark.apache.org/docs/latest/streaming/structured-streaming-kafka-integration.html)
+    - Watermark in streaming - [Explanation](https://www.youtube.com/watch?v=XjlKGvUt2dY)
 
-    - **Speed layer generates a lot of small files, causing small file problem in DeltaLake. Optimization techniques (deletion vector, compaction, z-oder, and vacuum) are adopted to handle this problem**
+- Add a CDC connector to capture changelog from Datasource and publish into a Kafka topic
+- Trigger 3 dags: `Bronze Ingestion`, `Silver Transformation`, and `Gold Stream Modeling`. Note that
+    - Since they are stream jobs, these dags will `awaitTermination`
+    - `Bronze Ingestion` subscribes the CDC source. Since this job is append-only, **CDF (built-in CDC of DeltaLake) is not required**
+    - `Silver Transformation`: Read stream from Bronze zone, **transform and write data to Silver zone with CDF on**. Thus, later job can capture `_change_type` such as `insert` and `update_postimage`
+    - `Gold Stream Modeling`: Capture changelog from Silver zone, modeling them and overwrite to a temporary table (Postgres), then **upsert to the Serving table of speed layer**
+    - These jobs read data from the previous one. Thus, they will raise errors if the previous source doesn't exist
 
-4. Serving layer
-    - A view in Postgres unions batch serving tables and stream serving table to serve newest data to end user
-    - The view is created as follows
-        - Batch part: Query the whole batch historical data
-        - Stream part: Only query from the last updated date from batch part
+- **Speed layer generates a lot of small files, causing small file problem in DeltaLake. Optimization techniques (deletion vector, compaction, z-oder, and vacuum) are adopted to handle this problem**
+
+#### Serving layer
+
+- A view in Postgres unions batch serving tables and stream serving table to serve newest data to end user
+- The view is created as follows
+    - Batch part: Query the whole batch historical data
+    - Stream part: Only query from the last updated date from batch part
