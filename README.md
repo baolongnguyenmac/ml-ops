@@ -6,7 +6,8 @@
     - Ops: Build infrastructure for running data pipeline and training model
 
 - Todo
-    - Detail implementation in each zones
+    - Detail documentation in each zones
+    - More DQ (e.g., Great Expectation)
     - AI/Data visualization for this data
 
 ## Data pipeline
@@ -24,6 +25,11 @@
     - In which, batch layer and speed layer are separated and possesses their own storage (i.e., separated batch and streaming table for each zone). Serving layer is constructed based on the combination of batch layer and speed layer.
 
     - Data source is simulated for batch job and streaming job. Batch job processes/transforms data based on watermark. Streaming job applies same transform logic on data obtained by CDC (Debezium or CDF). Serving layer is union from historical batch data and newest data from speed layer.
+
+    - Medallion architecture in this work
+        - Bronze: **Append-only, contain raw data**, partition by month, ready to re-run
+        - Silver: Data from bronze is cleaned, transformed, deduplicated, and **upsert into Silver**
+        - Gold: **Star schema is adopt**. Data from Silver is modeled and upsert into Gold zone. Maintain **SCD type 2 for dim tables**
 
     - Source code is packaged into modules as demonstrated in the image
 
@@ -118,6 +124,8 @@
         - `Silver Transformation`: Read stream from Bronze zone, **transform and write data to Silver zone with CDF on**. Thus, later job can capture `_change_type` such as `insert` and `update_postimage`
         - `Gold Stream Modeling`: Capture changelog from Silver zone, modeling them and overwrite to a temporary table (Postgres), then **upsert to the Serving table of speed layer**
         - These jobs read data from the previous one. Thus, they will raise errors if the previous source doesn't exist
+
+    - **Speed layer generates a lot of small files, causing small file problem in DeltaLake. Optimization techniques (deletion vector, compaction, z-oder, and vacuum) are adopted to handle this problem**
 
 4. Serving layer
     - A view in Postgres unions batch serving tables and stream serving table to serve newest data to end user
