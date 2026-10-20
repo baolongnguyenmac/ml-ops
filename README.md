@@ -68,6 +68,8 @@
 
 ### How-to guide
 
+This instruction shows the way to config infrastructure (i.e., how to run the system without knowing detail about it). In order to capture the logic of code, see `./airflow/README.md`
+
 #### A brief about architecture
 
 - [Medallion architecture](https://dev.to/datanestdigital/medallion-architecture-in-databricks-a-complete-implementation-guide-2lb9)
@@ -80,7 +82,16 @@
     - [Confluent](https://github.com/confluentinc/cp-all-in-one/blob/8.2.0-post/cp-all-in-one/docker-compose.yml)
     - Read `./.env_file/*.env.example` to create `./.env_file/*.env`
 
-- There are 2 `*-docker-compose.yml` files to be started. One runs `airflow`, the other creates infra for batch and speed layer. The `*.env` files have been referred in those compose files
+- **Add Debezium (as a plugin)** into `connect` by customizing the `connect` image (see `./cdc/Dockerfile`). This custom image is used as `connect` in the compose file
+
+    ```bash
+    cd ./cdc
+    docker built -t local/cp-server-connect-debezium:0.6.4-7.6.0 .
+    ```
+
+- **Config catalog** for `trino` as in `./trino/catalog/lakehouse.properties`. This config is mounted to trino in the compose file
+
+- There are 2 `*-docker-compose.yml` files to be started. One runs `airflow`, the other creates infra for batch and speed layer. The `./.env_file/*.env` files have been referred in those compose files
 
 - Read `Makefile` then run the following commands
 
@@ -90,11 +101,19 @@
 
 - Once `airflow` has healthily started, import environment variables (`./.env_file/*.json`, refer to `./.env_file/*.json.example`) into it so its worker can work securely with the variables
 
-- **Build environment for jobs**
+- **Build environment for jobs** (see `./airflow/README.md`)
     - Refer to `./airflow/dags/docker_env/Dockerfile` to build an env image
     - This image is used as an environment to run all jobs in this work
 
-#### Batch layer
+- After setting everything up, in the next run, just run the commands in `Makefile`
+
+#### Datasource (see `./airflow/README.md`)
+
+- Prepare `./tracking/track_produce_data` for tracking the generation process
+- Activate dag `Produce Data`, which have 3 modes: `stream`, `batch`, `both` (choose the suitable one based on purpose)
+- In order to capture changelog from datasource, Postgres should have `wal_level=logical`
+
+#### Batch layer (see `./airflow/README.md`)
 
 ![Batch pipeline](./flow/batch_pipeline.png)
 
@@ -103,22 +122,30 @@
     - Optimize: [Overview](https://delta.io/blog/delta-lake-optimize/), [Deletion Vectors](https://delta.io/blog/2023-07-05-deletion-vectors/), [Z Order](https://delta.io/blog/2023-06-03-delta-lake-z-order/)
     - Schema: [Schema enforcement](https://delta.io/blog/2022-11-16-delta-lake-schema-enforcement/), [Schema evolution](https://delta.io/blog/2023-02-08-delta-lake-schema-evolution/)
 
-- Activate dag `Produce Data`, which have 3 modes: `stream`, `batch`, `both` (choose the suitable one based on purpose)
+- Prepare `./tracking/track_{bronze, silver, gold}`
 - Active dag `Bronze >> Silver >> Gold` to start batch layer
     - Read the dag file to track the batch process, which starts from **loading data from source to Bronze zone (append-only); cleans, transforms, deduplicate data then upsert into Silver zone; modelings data and upsert into Gold zone**.
-    - Watermark will be generated in `./tracking`. Refer to `./tracking/*.backup` to understand how to initialize those watermarks
+    - Watermark will be updated in `./tracking`. Refer to `./tracking/*.backup` to understand how to initialize those watermarks
     - Silver and Gold zone are built based on `merge` operator, so **feel free to re-run** (unless the schema is heavily damage)
     - Gold zone is built by `dbt` as it's quite easy to setup. Read more about `dbt` [here](https://medium.com/@ahmealy/dbt-incremental-models-the-complete-guide-for-postgres-users-de18356a00a7)
 
 - Use `trino` to query delta table (setup via VSCode extension [DBCode](https://dbcode.io/) or just go straight into the container and query in there)
 
-#### Speed layer
+#### Speed layer (see `./airflow/README.md`)
 
 - Ref for Stream processing
     - Spark Streaming: [Quick start](https://spark.apache.org/docs/latest/streaming/getting-started.html#structured-streaming-programming-guide-1), [Watermark in streaming](https://spark.apache.org/docs/latest/streaming/apis-on-dataframes-and-datasets.html#structured-streaming-programming-guide-1), [Spark - Kafka](https://spark.apache.org/docs/latest/streaming/structured-streaming-kafka-integration.html)
     - Watermark in streaming - [Explanation](https://www.youtube.com/watch?v=XjlKGvUt2dY)
 
 - Add a CDC connector to capture changelog from Datasource and publish into a Kafka topic
+
+    ```bash
+    cd ./cdc
+    sh connector_register.sh ./configs/postgres-cdc.json
+    ```
+
+    - Check the status at `control-center` (http://localhost:9021), tab `Connector`
+
 - Trigger 3 dags: `Bronze Ingestion`, `Silver Transformation`, and `Gold Stream Modeling`. Note that
     - Since they are stream jobs, these dags will `awaitTermination`
     - `Bronze Ingestion` subscribes the CDC source. Since this job is append-only, **CDF (built-in CDC of DeltaLake) is not required**
@@ -126,7 +153,7 @@
     - `Gold Stream Modeling`: Capture changelog from Silver zone, modeling them and overwrite to a temporary table (Postgres), then **upsert to the Serving table of speed layer**
     - These jobs read data from the previous one. Thus, they will raise errors if the previous source doesn't exist
 
-- **Speed layer generates a lot of small files, causing small file problem in DeltaLake. Optimization techniques (deletion vector, compaction, z-oder, and vacuum) are adopted to handle this problem**
+- Speed layer generates a lot of small files, causing **small file problem** in DeltaLake. Optimization techniques (**deletion vector, compaction, z-oder, and vacuum**) are adopted to handle this problem
 
 #### Serving layer
 
