@@ -64,7 +64,7 @@
 
         - Processing: `SparkStreaming` as main processing technique
 
-    - **Serving layer uses Postgres with Star schema**. Both layers have their own serving tables. The batch one maintains a schema model. The speed one has its own fact table (joined coming data with dim tables from batch).
+    - **Serving layer uses Postgres with Star schema**. Both layers have their own serving tables. The batch one maintains a schema model. The speed one has its own fact table (joined coming data to dim tables from batch).
 
 ### How-to guide
 
@@ -144,7 +144,7 @@ This instruction shows the way to config infrastructure (i.e., how to run the sy
     sh connector_register.sh ./configs/postgres-cdc.json
     ```
 
-    - Check the status at `control-center` (http://localhost:9021), tab `Connector`
+    - Check the status at `control-center` (<http://localhost:9021>), tab `Connector`
 
 - Trigger 3 dags: `Bronze Ingestion`, `Silver Transformation`, and `Gold Stream Modeling`. Note that
     - Since they are stream jobs, these dags will `awaitTermination`
