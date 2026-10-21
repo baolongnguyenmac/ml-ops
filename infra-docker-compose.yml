@@ -98,7 +98,7 @@ services:
   # Add plugin to connect stuff (Debezium, SinkJDBC,...) to Kafka
   connect:
     build:
-      context: ./connect
+      context: ./cdc
     image: local/cp-server-connect-debezium:0.6.4-7.6.0
     hostname: connect
     container_name: ctns_connect
