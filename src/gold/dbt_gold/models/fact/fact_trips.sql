@@ -3,7 +3,37 @@
         materialized = 'incremental',
         unique_key = 'record_key',
         cluster_by = ['year', 'month'],
-        incremental_strategy = 'merge'
+        incremental_strategy = 'merge',
+        merge_update_columns = [
+            'pu_location_key',
+            'do_location_key',
+            'payment_type_key',
+            'rate_code_key',
+            'store_and_fwd_key',
+            'vendor_key',
+            'pickup_date_key',
+            'dropoff_date_key',
+            'pickup_longitude',
+            'pickup_latitude',
+            'dropoff_longitude',
+            'dropoff_latitude',
+            'pickup_datetime',
+            'dropoff_datetime',
+            'passenger_count',
+            'trip_distance',
+            'fare_amount',
+            'extra',
+            'mta_tax',
+            'surcharge',
+            'improvement_surcharge',
+            'tip_amount',
+            'tolls_amount',
+            'total_amount',
+            'congestion_surcharge',
+            'airport_fee',
+            'cbd_congestion_fee',
+            'gold_updated_datetime'
+        ]
     )
 }}
 -- cluster_by will affect how the data is stored on disk, and indexed to limit scans
@@ -83,7 +113,8 @@ select
     s.month,
     s.silver_created_datetime,
     s.silver_updated_datetime,
-    current_timestamp as gold_created_datetime
+    current_timestamp as gold_created_datetime,
+    current_timestamp as gold_updated_datetime
 
 from source as s
     left join dim_location as pu_dl on s.pu_location_id=pu_dl.location_id
@@ -92,6 +123,8 @@ from source as s
     left join dim_rate_code as dr on s.rate_code_id=dr.rate_code_id
     left join dim_store_fwd as dsf on s.store_and_fwd_id=dsf.store_and_fwd_id
     left join dim_vendor as dv on s.vendor_id=dv.vendor_id
+
+-- where dp.dbt_scd_id is NULL and dr.dbt_scd_id is NULL and dv.dbt_scd_id is NULL
 
 {% if is_incremental() %}
 -- where s.silver_updated_datetime > (select max(silver_updated_datetime) from {{ this }})

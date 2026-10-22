@@ -121,7 +121,7 @@ def _insert_batch(df:DataFrame, n_chunk:int, host:str, target_table:str, delay:i
         chunks = [df]
     for idx, chunk in enumerate(chunks):
         # insert to db
-        print(f'\tInsert chunk {idx+1}')
+        print(f'\n\tInsert chunk {idx+1}')
         (
             chunk.write
             .format("jdbc")
@@ -138,25 +138,32 @@ def _insert_batch(df:DataFrame, n_chunk:int, host:str, target_table:str, delay:i
 
     return total_inserted
 
-def insert_parquet(spark:SparkSession, host:str, filepath:str, n:int = 140_000, mode:str='batch'):
-    # read parquet
-    df:DataFrame = (spark.read.parquet(filepath))
+def insert_parquet(spark:SparkSession, host:str, file_batch:str, file_stream:str, n:int = 140_000, mode:str='batch'):
+    if mode=='batch' or mode=='both':
+        df:DataFrame = spark.read.parquet(file_batch)
+        f = min(n/df.count(), 1.0)
+        df = transform_data(df.sample(fraction=f, seed=42))
+        df = df.withColumn('source_file', F.lit(os.path.basename(file_batch)))
 
-    # sample n rows
-    fraction = min(n/df.count(), 1.0)
-    df = transform_data(df.sample(fraction=fraction, seed=42))
-    df = df.withColumn('source_file', F.lit(os.path.basename(filepath)))
+    if mode=='stream' or mode=='both':
+        df_stream:DataFrame = spark.read.parquet(file_stream)
+        f_stream = min(n/df_stream.count(), 1.0)*0.2
+        df_stream = transform_data(df_stream.sample(fraction=f_stream, seed=42))
+        df_stream = df_stream.withColumn('source_file', F.lit(os.path.basename(file_stream)))
 
     target_table_batch = 'public.nyc_taxi'
     target_table_stream = 'public.nyc_taxi_stream'
 
-    # insert data into postgres
     if mode=='stream':
-        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=5, host=host, target_table=target_table_stream, delay=5)
+        n_rows = _insert_batch(df=df_stream, n_chunk=3, host=host, target_table=target_table_stream, delay=3)
+        print(f'\nInserted: {n_rows} rows from {file_stream}\n')
     elif mode=='batch':
-        return _insert_batch(df=df, n_chunk=1, host=host, target_table=target_table_batch)
+        n_rows = _insert_batch(df=df, n_chunk=1, host=host, target_table=target_table_batch)
+        print(f'\nInserted: {n_rows} rows from {file_batch}\n')
     elif mode=='both':
-        return _insert_batch(df=df.sample(0.2, seed=42), n_chunk=5, host=host, target_table=target_table_stream, delay=5) + _insert_batch(df=df, n_chunk=1, host=host, target_table=target_table_batch)
+        n_stream_rows = _insert_batch(df=df_stream, n_chunk=3, host=host, target_table=target_table_stream, delay=3)
+        n_batch_rows = _insert_batch(df=df, n_chunk=1, host=host, target_table=target_table_batch)
+        print(f'\nInserted: {n_batch_rows} rows from {file_batch} and {n_stream_rows} rows from {file_stream}\n')
 
 def main(host:str='localhost'):
     params = parse_args()
@@ -176,11 +183,12 @@ def main(host:str='localhost'):
 
     data_dir = os.path.join(os.getenv('S3_URI'), 'source')
 
-    target_file = parquet_files.pop(0).strip()
-    print(f'\n===== Process {target_file} =====\n')
-    filepath = os.path.join(data_dir, target_file)
-    n_new_rows = insert_parquet(spark=spark, host=host, filepath=filepath, mode=mode)
-    print(f'\nInserted: {n_new_rows} rows from {target_file}\n')
+    target_file_batch = parquet_files.pop(0).strip()
+    target_file_stream = parquet_files[0].strip()
+    print(f'\n===== Process Batch: {target_file_batch}; Stream: {target_file_stream} =====\n')
+    file_batch = os.path.join(data_dir, target_file_batch)
+    file_stream = os.path.join(data_dir, target_file_stream)
+    insert_parquet(spark=spark, host=host, file_batch=file_batch, file_stream=file_stream, mode=mode)
 
     # write the tracking file
     if mode=='both' or mode=='batch':

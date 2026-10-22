@@ -7,7 +7,7 @@ from docker.types import Mount
 
 with DAG(
     dag_id='setup_gold',
-    dag_display_name='Setup Gold zone',
+    dag_display_name='Gold Setup',
     description='Setup Gold zone',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
     schedule=None,
@@ -15,8 +15,8 @@ with DAG(
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
 ) as dag:
-    setup_gold = DockerOperator(
-        task_id='gold.setup_gold',
+    gold_setup = DockerOperator(
+        task_id='gold.setup',
         api_version='auto',
         mount_tmp_dir=False,
 
@@ -24,7 +24,7 @@ with DAG(
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
         image='longnb32/spark_env:v1.4',
-        container_name='ctn_setup_gold',
+        container_name='ctn_gold_setup',
         working_dir='/app',
         mounts=[
             Mount(
@@ -53,8 +53,8 @@ with DAG(
         command='python -m gold.setup_gold',
     )
 
-    setup_deps_seed = DockerOperator(
-        task_id='deps_seed',
+    snapshot_seed_setup = DockerOperator(
+        task_id='gold.snapshot_seed',
         api_version='auto',
         mount_tmp_dir=False,
 
@@ -62,7 +62,7 @@ with DAG(
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
         image='longnb32/spark_env:v1.4',
-        container_name='ctn_seed_gold',
+        container_name='ctn_gold_snapshot_seed',
         working_dir='/app/src/gold/dbt_gold',
         mounts=[
             Mount(
@@ -75,5 +75,5 @@ with DAG(
         environment={
             "PYTHONUNBUFFERED": 1
         },
-        command=['bash', '-c', 'pwd && dbt snapshot && dbt deps && dbt seed'],
+        command=['bash', '-c', 'pwd && dbt snapshot && dbt seed'],
     )

@@ -65,7 +65,7 @@ def _save_batch(df:DataFrame, db_host:str, target_table:str)->int:
     print(f"\nOverwrite table '{target_table}'\nInserted {source_count} rows\n")
     return source_count
 
-def upsert_df(source_df:DataFrame, target_table:str, db_host:str, set_cols:set[str], pk:str, distinct:bool=True, audit_cols:set={}):
+def upsert_df(source_df:DataFrame, target_table:str, db_host:str, set_cols:set[str], pk:str, distinct:bool=True, audit_cols:set=set()):
     """Upsert a dataframe into a target table
 
     Args:
@@ -93,7 +93,7 @@ def upsert_df(source_df:DataFrame, target_table:str, db_host:str, set_cols:set[s
     )
     source_count = source_df.count()
     print(f"\nUpsert into table '{target_table}'")
-    print(f"\tOverwrote {source_count} rows to table '{target_table}_tmp'\n")
+    print(f"\tOverwrote {source_count} rows to table '{target_table}_tmp'")
 
     updated_cols = set_cols - {pk} - audit_cols
     updated_set = [f'{col} = EXCLUDED.{col}' for col in updated_cols]
@@ -125,9 +125,16 @@ def ingest_staging(
     df.createOrReplaceTempView('nyc_taxi')
     df = spark.sql(f'''
         select * from nyc_taxi
-        where silver_updated_datetime >= timestamp '{watermark}'
+        where silver_updated_datetime <= (
+            select max(silver_updated_datetime)
+            from (
+                select * from nyc_taxi
+                where silver_updated_datetime > timestamp '{watermark}'
+                order by silver_updated_datetime asc
+                limit {140_000*3}
+            )
+        ) and silver_updated_datetime > timestamp '{watermark}'
         and silver_updated_datetime < '{batch_start_ts!s}'
-        limit {140_000*3}
     ''')
 
     # create staging schema
@@ -166,7 +173,7 @@ def main(lh_host:str='localhost', db_host:str='localhost'):
         fi.close()
 
     if check_date(previous_last_date):
-        print(f'\n=== Start ingest from silver_updated_datetime (watermark) >= {previous_last_date} ===\n')
+        print(f'\n=== Start ingest from silver_updated_datetime (watermark) > {previous_last_date} ===\n')
         spark = create_session(lh_host)
         source_table = f'{SILVER_SCHEMA}.{SILVER_TABLE_BATCH}'
         target_table = f'{SCHEMA}.{FACT_SOURCE}'

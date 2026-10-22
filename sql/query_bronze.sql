@@ -45,3 +45,9 @@ select max(bronze_created_datetime) from (
 );
 
 select distinct month, year from nyc_taxi order by year, month;
+
+select max(pickup_datetime) from nyc_taxi;
+
+select count(*) from nyc_taxi_stream;
+
+select max(source_created_datetime) from nyc_taxi_stream;

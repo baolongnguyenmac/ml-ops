@@ -18,7 +18,7 @@ def _test_with_version(delta_table:DeltaTable, version:int, source_count:int):
         updated = int(metrics['numTargetRowsUpdated'])
         expected_source = int(metrics['numSourceRows'])
 
-        print(f'Inserted: {inserted} rows')
+        print(f'\nInserted: {inserted} rows')
         print(f'Updated: {updated} rows')
         print(f'Expected source: {expected_source} rows')
         print(f'Source counted (from job): {source_count} rows')
@@ -27,7 +27,7 @@ def _test_with_version(delta_table:DeltaTable, version:int, source_count:int):
         assert updated + inserted <= source_count
 
     elif 'create' in operation.lower():
-        print(f'Inserted: {metrics["numOutputRows"]} rows')
+        print(f'\nInserted: {metrics["numOutputRows"]} rows')
         print(f'Source counted (from job): {source_count} rows')
 
         assert int(metrics["numOutputRows"])==source_count

@@ -34,7 +34,7 @@ CHECKPOINT = '/home/nblong/Dropbox/Project/ops/ml-ops/spark/checkpoint/silver_st
 def create_session(lh_host:str='localhost', checkpoint:str=CHECKPOINT) -> SparkSession:
     return (
         SparkSession.builder
-        .appName('ingest data to bronze zone')
+        .appName('ingest data to silver zone')
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .config("spark.sql.session.timeZone", "UTC")
@@ -256,9 +256,16 @@ def ingest_silver(
     batch_start_ts = datetime.now(timezone.utc)
     df = spark.sql(f'''
         select * from nyc_taxi
-        where bronze_created_datetime >= timestamp '{watermark}'
+        where bronze_created_datetime <= (
+            select max(bronze_created_datetime)
+            from (
+                select * from nyc_taxi
+                where bronze_created_datetime > timestamp '{watermark}'
+                order by bronze_created_datetime asc
+                limit {140_000*3}
+            )
+        ) and bronze_created_datetime > timestamp '{watermark}'
         and bronze_created_datetime < '{batch_start_ts!s}'
-        limit {140_000*3}
     ''')
 
     # process
@@ -294,7 +301,7 @@ def ingest_stream_silver(
     bronze_df = (
         spark.readStream
         .format('delta')
-        .option("startingVersion", "latest") # read from the latest version of table
+        .option("startingVersion", '0') # `0,1,2,...` or `latest`. if checkpoint not found, read the whole table, else read from checkpoint
         .table(source_table)
     )
     silver_df = _transform(bronze_df)
@@ -339,7 +346,7 @@ def main(lh_host:str='localhost'):
             previous_watermark = list_dates[0].strip()
             fi.close()
 
-        print(f'\n=== Start ingest from bronze_created_datetime (watermark) >= {previous_watermark} ===\n')
+        print(f'\n=== Start ingest from bronze_created_datetime (watermark) > {previous_watermark} ===\n')
         source_table = f'{BRONZE_SCHEMA}.{BRONZE_TABLE_BATCH}'
         target_table = f'{SCHEMA}.{TABLE_BATCH}'
         current_watermark, source_count, current_version = ingest_silver(

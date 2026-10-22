@@ -9,7 +9,7 @@ with DAG(
     dag_display_name='Produce Data',
     description='Simulate data source',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    schedule='*/1 * * * *',
+    schedule='*/10 * * * *',
     # schedule=None,
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
@@ -53,5 +53,5 @@ with DAG(
             "PYTHONPATH": '/app/src',
             "PYTHONUNBUFFERED": 1
         },
-        command='python -m utils.produce_data --mode stream',
+        command='python -m utils.produce_data --mode both',
     )

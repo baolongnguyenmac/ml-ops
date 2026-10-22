@@ -183,12 +183,18 @@ def ingest_bronze(
     # lấy data trong khoảng (watermark, batch_start_ts) để nó không bị khác snapshot do lazy evaluation của spark
     # giới hạn tầm 140_000*3 rows để đỡ nổ
     # phải lấy thêm những TH có cùng source_created_datetime nhưng bị giới hạn bởi 140_000 để watermark lần tới được chính xác
-    # phải update cả silver & gold nữa
     df = spark.sql(f'''
         select * from nyc_taxi
-        where source_created_datetime >= timestamp '{watermark}'
+        where source_created_datetime <= (
+            select max(source_created_datetime)
+            from (
+                select * from nyc_taxi
+                where source_created_datetime > timestamp '{watermark}'
+                order by source_created_datetime asc
+                limit {140_000*3}
+            )
+        ) and source_created_datetime > timestamp '{watermark}'
         and source_created_datetime < '{batch_start_ts!s}'
-        limit {140_000*3}
     ''')
 
     # process
@@ -263,7 +269,7 @@ def _parse_cdc_event(df:DataFrame, topic:str, schema_registry_url:str):
         )
 
     except Exception as e:
-        print(f'Error parsing Avro data: {e}')
+        print(f'\nError parsing Avro data: {e}')
         raise
 
 def ingest_stream_bronze(
@@ -278,7 +284,7 @@ def ingest_stream_bronze(
         .format('kafka')
         .option('kafka.bootstrap.servers', BOOTSTRAP_SERVERS)
         .option('subscribe', source_topic)
-        .option('startingOffsets', 'latest') # `earliest` hoặc `latest`
+        .option('startingOffsets', 'earliest') # `earliest` or `latest`. if checkpoint not found, read the whole table, else read from checkpoint
         .option('failOnDataLoss', 'false')
         .load()
     )
@@ -326,7 +332,7 @@ def main(lh_host:str='localhost', db_host:str='localhost'):
             previous_watermark = list_dates[0].strip()
             fi.close()
 
-        print(f'\n=== Start ingest from: source_created_datetime (watermark) >= {previous_watermark} ===\n')
+        print(f'\n=== Start ingest from: source_created_datetime (watermark) > {previous_watermark} ===\n')
 
         target_table = f'{SCHEMA}.{TABLE_BATCH}'
 

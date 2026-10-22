@@ -10,7 +10,7 @@ silver_asset = Asset(os.path.join(Variable.get("S3_URI"), 'silver'))
 gold_asset = Asset("jdbc:postgresql://company_db:5432/gold")
 
 with DAG(
-    dag_id='ingest_gold_stream',
+    dag_id='gold.model',
     dag_display_name='Gold Stream Modeling',
     description='Modeling data from Silver to Gold zone (stream)',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
@@ -19,8 +19,8 @@ with DAG(
     catchup=False,  # không backfill các run bị bỏ lỡ
     fail_fast=True, # stop dag if a task fails
 ) as dag:
-    ingest_staging = DockerOperator(
-        task_id='gold.ingest_stream',
+    DockerOperator(
+        task_id='gold.model',
         api_version='auto',
         mount_tmp_dir=False,
         outlets=[gold_asset],
@@ -29,7 +29,7 @@ with DAG(
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
         image='longnb32/spark_env:v1.4',
-        container_name='ctn_ingest_gold_stream',
+        container_name='ctn_gold_model_stream',
         working_dir='/app',
         mounts=[
             Mount(

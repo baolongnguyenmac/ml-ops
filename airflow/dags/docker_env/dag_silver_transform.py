@@ -21,7 +21,7 @@ with DAG(
     fail_fast=True, # stop dag if a task fails
 ) as dag:
     DockerOperator(
-        task_id='silver.ingest_silver',
+        task_id='silver.transform',
         api_version='auto',
         mount_tmp_dir=False,
         outlets=[silver_asset],
@@ -31,7 +31,7 @@ with DAG(
         network_mode="ml-ops_default",
         docker_url="tcp://docker-proxy:2375",   # ref: https://medium.com/@benjcabalonajr_56579/using-docker-operator-on-airflow-running-inside-a-docker-container-7df5286daaa5
         image='longnb32/spark_env:v1.4',
-        container_name='ctn_ingest_silver',
+        container_name='ctn_silver_transform_stream',
         working_dir='/app',
         mounts=[
             Mount(

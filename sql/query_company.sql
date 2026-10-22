@@ -124,3 +124,28 @@ select max(source_created_datetime) from (
 );
 
 select max(source_file) from nyc_taxi;
+
+select source_created_datetime from nyc_taxi_stream;
+
+select * from nyc_taxi_stream
+where
+	vendor_id='1'
+	and pickup_datetime=timestamp '2024-10-10 21:36:44.000'
+	and dropoff_datetime=timestamp '2024-10-10 21:45:03.000'
+	and passenger_count=1
+	and trip_distance=1.8
+	and rate_code_id=1
+	and store_and_fwd_flag='N'
+	and pu_location_id='170'
+	and do_location_id='141'
+	and payment_type='1'
+	and fare_amount=10.7
+	and extra=3.5
+	and mta_tax=0.5
+	and improvement_surcharge=1
+	and tip_amount=3.1
+	and total_amount=18.8
+	and congestion_surcharge=2.5
+	and source_created_datetime=timestamp '2026-09-30 02:43:00.293';
+
+select max(source_created_datetime) from nyc_taxi_stream;

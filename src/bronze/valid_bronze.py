@@ -24,7 +24,7 @@ def post_validate_bronze(spark:SparkSession, table_name:str, source_count:int, v
     )
     expected_source = int(metrics['numOutputRows'])
 
-    print(f'Expected source: {expected_source} rows')
+    print(f'\nExpected source: {expected_source} rows')
     print(f'Source counted (from job): {source_count} rows')
     assert expected_source == source_count
 

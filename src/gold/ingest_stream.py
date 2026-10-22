@@ -44,7 +44,7 @@ def ingest_stream_gold(
         spark.readStream
         .format('delta')
         .option("readChangeFeed", "true")
-        .option("startingVersion", "latest") # read from the latest version of table
+        .option("startingVersion", "0") # `0,1,2,...` or `latest`. if checkpoint not found, read the whole table, else read from checkpoint
         .table(source_table)
         .filter(
             F.col("_change_type").isin(["insert", "update_postimage"])
@@ -117,6 +117,14 @@ def ingest_stream_gold(
                 F.current_timestamp().alias('gold_updated_datetime')
             )
         )
+
+        print()
+        (
+            fact_trips_tmp
+            .select('month', 'year').distinct()
+            .orderBy('year', 'month')
+        ).show(truncate=False)
+        print()
 
         # upsert fact_trips_tmp to fact_trips_stream
         upsert_df(
