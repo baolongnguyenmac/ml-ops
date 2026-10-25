@@ -12,7 +12,7 @@ with DAG(
     dag_display_name='Bronze >> Silver >> Gold',
     description='Walk data through Bronze >> Silver >> Gold',
     start_date=datetime(2026,1,1, tzinfo=timezone.utc),
-    schedule='*/5 * * * *',
+    schedule='*/11 * * * *',
     # schedule=None,
     max_active_runs=1,  # chỉ cho 1 run chạy tại 1 thời điểm
     catchup=False,  # không backfill các run bị bỏ lỡ
