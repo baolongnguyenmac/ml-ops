@@ -1,8 +1,45 @@
-# A closer look at jobs (logic)
+# Zone view
 
-This note provides detail about jobs. Since this is the place where everything starts, it's suitable to put the `README.md` here. The structure follows Lambda architecture (batch, speed, serving layer)
+This note provides detail about jobs. Since this directory is the place where everything starts, it's suitable to put the `README.md` here. The structure follows Lambda architecture (batch, speed, serving layer)
 
 ![Data flow](../flow/data_flow.svg)
+
+## Pre-require knowledge for the architecture
+
+- [Medallion architecture](https://dev.to/datanestdigital/medallion-architecture-in-databricks-a-complete-implementation-guide-2lb9)
+- [Real-time processing](https://dev.to/datanestdigital/real-time-data-streaming-with-apache-kafka-and-spark-c4l)
+
+## Start the infrastructure
+
+- Ref for **building infra and preparing env variables**
+    - [Airflow](https://github.com/apache/airflow/blob/main/airflow-core/docs/howto/docker-compose/docker-compose.yaml)
+    - [Confluent](https://github.com/confluentinc/cp-all-in-one/blob/8.2.0-post/cp-all-in-one/docker-compose.yml)
+    - Read `./.env_file/*.env.example` to create `./.env_file/*.env`
+
+- For the first time, it is required to **add Debezium (as a plugin)** into `connect` by customizing the `connect` image (see `./cdc/Dockerfile`). This custom image is used as `connect` in the compose file
+
+    ```bash
+    cd ./cdc
+    docker built -t local/cp-server-connect-debezium:0.6.4-7.6.0 .
+    ```
+
+    - `make up-i1` also builds the `connect`. See `../Makefile`
+
+- **Config catalog** for `trino` as in `./trino/catalog/lakehouse.properties`. This config is mounted to trino in the compose file
+
+- There are 2 `*-docker-compose.yml` files to be started. One runs `airflow`, the other creates infra for batch and speed layer. The `./.env_file/*.env` files have been referred in those compose files
+
+- Read `Makefile` then run the following commands
+
+    ```bash
+    make up-a & make up-i
+    ```
+
+- Once `airflow` has healthily started, import environment variables (`./.env_file/*.json`, refer to `./.env_file/*.json.example`) into it so its worker can work securely with the variables (Admin >> Variables >> Import Variables)
+
+- **Build environment for jobs**
+    - Refer to `./airflow/dags/docker_env/Dockerfile` to build an env image
+    - This image is used as an environment to run all jobs in this work
 
 ## Environment for running jobs
 
@@ -24,16 +61,16 @@ This note provides detail about jobs. Since this is the place where everything s
 
 ## Batch watermark
 
-- The watermarks are maintained at `../tracking`
+- The watermarks are maintained at `../tracking`. They are required to run jobs
     - `track_bronze`: Contain a list of `source_created_datetime`. Each element (at a time) is the newest processed value in Bronze zone. Initialized value: `2000-01-01 00:00:00.0`
     - `track_silver`: Same logic to `track_bronze`, but the list contains the newest `bronze_created_datetime` from Silver zone
     - `track_gold`: Same logic to `track_bronze`, but the list contains the newest `silver_created_datetime` from Gold zone
-    - `track_produce_data`: The only file doesn't follow watermark logic. It contains a list of unprocessed parquet file. Once the file is processed, its name will be removed from the list
+    - `track_produce_data`: The only file doesn't follow watermark logic above. It contains a list of unprocessed parquet file. Once the file is processed, its name will be removed from the list
 
 - Usage: For example, a job needs to read from datasource and pour raw data into Bronze zone
     - At a time, it can only handle an amount of data
     - After handling that amount of data, it records the latest `source_created_datetime` of that amount (aka `watermark`)
-    - Next time, it will process (from datasource) all records whose `source_created_datetime` is greater than or equal to `watermark` and record the new `watermark`
+    - Next time, it will process (from datasource) all records whose `source_created_datetime` is greater than `watermark` and record the new `watermark`
 
 ## Datasource
 
@@ -48,6 +85,7 @@ This note provides detail about jobs. Since this is the place where everything s
     - Purpose: First, a portion of data is inserted into `nyc_taxi_streams` to simulate the CDC source (Debezium reads changelog and writes to a Kafka topic) for stream jobs. Then the whole file is inserted into `nyc_taxi` for batch jobs to correct stream's output
 
 - Process
+    - It requires `wal_level=logical` in Postgres so the changelog can be captured. See `../infra-docker-compose.yml`
     - The job processes the first filename in `../tracking/track_produce_data` every minute. After that, the filename is removed from the tracking file.
     - There are 3 modes to trigger (modified in the dag file)
         - `batch`: Push the whole file into `nyc_taxi` and update tracking file
@@ -73,6 +111,8 @@ This note provides detail about jobs. Since this is the place where everything s
         - Update watermark for batch job: Insert the new one into `../tracking/track_bronze`
     - Stream job does the same logic but the data source is a Kafka topic, which requires to decode the message based on specified format (`avro, json`) and schema. Since Debezium registers the message's schema to `schema-registry`. Just take the schema from `schema-registry` to decode the message
 
+- Trino can be used to query data from Bronze zone (use DBCode or just go straight into the container and query in there)
+
 ## Silver zone
 
 - Ref
@@ -93,6 +133,8 @@ This note provides detail about jobs. Since this is the place where everything s
 
     - Stream job does the same logic but the source data is `readStream` from Bronze zone (`lakehouse.bronze.nyc_taxi_stream`). CDF is not required to turn on since the previous job only appends to Bronze zone (**if there's any update/delete without CDF turned on, the code will crash**)
 
+- Trino can be used to query data from Silver zone (use DBCode or just go straight into the container and query in there)
+
 ## Gold zone
 
 - Ref
@@ -112,6 +154,8 @@ This note provides detail about jobs. Since this is the place where everything s
     - All dim tables are maintained by batch layer
 
 - Process
+    ![Gold logic](../flow/gold_logic.svg)
+
     - Setup gold zone (dag `gold.setup_gold`)
         - Create gold tables
             - `public.dim_{date, location, store_fwd}`: Ensure Spark writes the right datatype to these table
@@ -134,7 +178,7 @@ This note provides detail about jobs. Since this is the place where everything s
         - Filter only `insert` and `postimage` (after-change version of a record) and join to dim tables (from batch layer) to model fact table
         - Upsert that dataframe into `public.fact_trips_stream`
 
-    - Serving layer: A view to combine `public.fact_trips` and `public.fact_trips_stream`, which take all the historical data from batch layer and the newest one (based on watermark) of stream layer
+    - Serving layer: A view to combine `public.fact_trips` and `public.fact_trips_stream`, which take all the historical data from batch layer and the newest one (based on watermark, year, and month) of stream layer
 
 ## Orchestration
 
@@ -152,3 +196,5 @@ This note provides detail about jobs. Since this is the place where everything s
 - Speed layer
     - The idea is that I have a console to manage the dag and the environment should be isolated. Thus, I wrapped the stream code into a Docker environment
     - 3 jobs behave exactly in stream mode (`awaitTermination`)
+
+- Serving layer: This layer is not included in the orchestration but calculated at the time it's accessed by end user

@@ -25,6 +25,9 @@ restart-a:
 up-i:
 	$(INFRA_COMPOSE_CMD) up -d
 
+up-i1:
+	$(INFRA_COMPOSE_CMD) up -d --build connect
+
 stop-i:
 	$(INFRA_COMPOSE_CMD) stop
 

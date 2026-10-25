@@ -1,24 +1,24 @@
+
 # ml-ops
 
 - A full-stack MLOps project which aims at 3 points
-    - Data: Build a data pipeline
+    - Data pipeline: Build a data pipeline
     - AI: Automatically train model
     - Ops: Build infrastructure for running data pipeline and training model
 
 - Todo
-    - Detail documentation in each zones
     - More DQ (e.g., Great Expectation)
     - AI/Data visualization for this data
 
 ## Data pipeline
 
-### Overview
+### A brief on Problem, Architecture, Tech-stack
 
 - Data description: [Taxi trip records in New York City](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) is a dataset capturing all taxi trips (pickup/drop-off datetime or location, types of fee, number of passengers,...) in New York City from 2009. **The dataset contains about 1.5 billion records (~170GB).**
 
-- This work aims to **implement a full Lambda pipeline that simulates the datasource, processes data through zones, and serves clean data to end user** (Data Analyst, Data Scientist)
+- **Problem**: This work aims to **implement a full Lambda pipeline that simulates the datasource, processes data through zones, and serves clean data to end user** (Data Analyst, Data Scientist)
 
-- **Lambda architecture** is adopt as follows
+- **Architecture**: **Lambda architecture** is adopt as follows
 
     ![Data flow](./flow//data_flow.svg)
 
@@ -66,85 +66,120 @@
 
     - **Serving layer uses Postgres with Star schema**. Both layers have their own serving tables. The batch one maintains a schema model. The speed one has its own fact table (joined coming data to dim tables from batch).
 
-### How-to guide
+### Project structure
 
-This instruction shows the way to config infrastructure (i.e., how to run the system without knowing detail about it). In order to capture the logic of code, see `./airflow/README.md`
+```md
+.
+├── .env_file                   # Environment variables
+├── airflow                     # Contain all DAGs (produce data, batch, speed, optimize)
+│   ├── config
+│   ├── dags
+│   |   └── docker_env          # All jobs are run in a docker environment
+|   └── README.md               # **Explain detail about most of everything in the project**
+├── cdc                         # Build `connect` with plugin `Debezium`
+│   └── configs
+├── flow                        # Design of pipeline
+├── spark                       # Checkpoint of spark
+│   └── checkpoint
+│       ├── bronze_stream
+│       ├── gold_stream
+│       └── silver_stream
+├── sql                         # Initialize of some tables and **serving view**
+├── src
+│   ├── bronze                  # Ingest into and validate Bronze zone
+│   ├── gold                    # Modeling schema for Gold zone
+│   │   └── dbt_gold            # Modeling using `dbt`
+│   │       ├── analyses
+│   │       ├── models
+│   │       │   ├── dimensions
+│   │       │   └── fact
+│   │       ├── seeds
+│   │       └── snapshots
+│   ├── notebooks               # Draft before code
+│   │   ├── test_infra
+│   │   └── test_process_data
+│   │       ├── ingest_bronze
+│   │       ├── ingest_gold
+│   │       ├── ingest_silver
+│   │       └── produce_data
+│   ├── silver                  # Clean, transform, enrich data before merge into Silver zone
+│   └── utils                   # Produce data and other utils stuff
+├── tracking                    # Watermark for 3 zones
+├── trino                       # Config catalog for `trino`
+|   ├── catalog
+|   └── etc
+├── requirements.in             # Dependencies
+├── airflow-docker-compose.yml  # Start Airflow
+├── infra-docker-compose.yml    # Start Infrastructure
+└── Makefile                    # Shortcut for commands
+```
 
-#### A brief about architecture
+### Quickstart
 
-- [Medallion architecture](https://dev.to/datanestdigital/medallion-architecture-in-databricks-a-complete-implementation-guide-2lb9)
-- [Real-time processing](https://dev.to/datanestdigital/real-time-data-streaming-with-apache-kafka-and-spark-c4l)
+- This instruction shows the way to run the system without knowing detail about it. In order to capture the logic of code, see `./airflow/README.md`
 
-#### Start infrastructure
+- Infrastructure
+    - Prepare `./.env_file/*.env` files as examples at the same directory
+    - Start Airflow and Infrastructure. **For the first time**, use `make up-i1` instead of `make up-i`
 
-- Ref for **building infra and preparing env variables**
-    - [Airflow](https://github.com/apache/airflow/blob/main/airflow-core/docs/howto/docker-compose/docker-compose.yaml)
-    - [Confluent](https://github.com/confluentinc/cp-all-in-one/blob/8.2.0-post/cp-all-in-one/docker-compose.yml)
-    - Read `./.env_file/*.env.example` to create `./.env_file/*.env`
+        ```bash
+        make up-a & make up-i
+        ```
 
-- **Add Debezium (as a plugin)** into `connect` by customizing the `connect` image (see `./cdc/Dockerfile`). This custom image is used as `connect` in the compose file
+    - Check health for all service (`docker ps -a | grep -E "ctn|air"`)
+    - Register connector to read changelog from Datasource (Postgres table)
 
-    ```bash
-    cd ./cdc
-    docker built -t local/cp-server-connect-debezium:0.6.4-7.6.0 .
-    ```
+        ```bash
+        cd ./cdc
+        sh connector_register.sh ./configs/postgres-cdc.json
+        ```
 
-- **Config catalog** for `trino` as in `./trino/catalog/lakehouse.properties`. This config is mounted to trino in the compose file
+        - Check the status at `control-center` (<http://localhost:9021>), tab `Connector`
 
-- There are 2 `*-docker-compose.yml` files to be started. One runs `airflow`, the other creates infra for batch and speed layer. The `./.env_file/*.env` files have been referred in those compose files
+- Source
+    - Prepare `*.parquet` files on AWS S3
+    - Access Airflow UI (<http://localhost:8080>)
+    - Active DAG `Produce Data`
 
-- Read `Makefile` then run the following commands
+- Batch layer
+    - Access Airflow UI (<http://localhost:8080>)
+    - Active DAG `Bronze >> Silver >> Gold`
+    - Batch job should be run at least once before starting Stream job since Stream job depends on some material generated by Batch job
 
-    ```bash
-    make up-a & make up-i
-    ```
+- Speed layer
+    - Access Airflow UI (<http://localhost:8080>)
+    - Trigger 3 DAGs: `Bronze Ingestion`, `Silver Transformation`, `Gold Stream Modeling`
+    - Since the later job reads output of the former job (i.e., Silver reads output table of Bronze and Gold reads one from Silver). Bronze/Silver should output something before Silver/Gold is triggered
 
-- Once `airflow` has healthily started, import environment variables (`./.env_file/*.json`, refer to `./.env_file/*.json.example`) into it so its worker can work securely with the variables
+- Serving layer: Create the view specified at `./sql/serving_view.sql`
+- Querying to tables at zones can be done using [DBCode](https://dbcode.io/). Setup connection to Postgres and Trino before querying
 
-- **Build environment for jobs** (see `./airflow/README.md`)
-    - Refer to `./airflow/dags/docker_env/Dockerfile` to build an env image
-    - This image is used as an environment to run all jobs in this work
+- Next, there're 2 sessions describing the behavior of the system in 2 views: Layer (batch, speed, serving) and Zone (Bronze, Silver, Gold). The Layer view is more general and is written down bellow. The Zone view is more detail and can be found at `./airflow/README.md`
 
-- After setting everything up, in the next run, just run the commands in `Makefile`
+### Layer view
 
-#### Datasource (see `./airflow/README.md`)
-
-- Prepare `./tracking/track_produce_data` for tracking the generation process
-- Activate dag `Produce Data`, which have 3 modes: `stream`, `batch`, `both` (choose the suitable one based on purpose)
-- In order to capture changelog from datasource, Postgres should have `wal_level=logical`
-
-#### Batch layer (see `./airflow/README.md`)
+#### Batch layer
 
 ![Batch pipeline](./flow/batch_pipeline.png)
 
-- Ref for Delta lake
+- Pre-require knowledge for Delta lake
     - Upsert: [Basic](https://delta.io/blog/2023-02-14-delta-lake-merge/), [Advanced](https://delta.io/blog/delta-lake-upsert/)
     - Optimize: [Overview](https://delta.io/blog/delta-lake-optimize/), [Deletion Vectors](https://delta.io/blog/2023-07-05-deletion-vectors/), [Z Order](https://delta.io/blog/2023-06-03-delta-lake-z-order/)
     - Schema: [Schema enforcement](https://delta.io/blog/2022-11-16-delta-lake-schema-enforcement/), [Schema evolution](https://delta.io/blog/2023-02-08-delta-lake-schema-evolution/)
 
-- Prepare `./tracking/track_{bronze, silver, gold}`
 - Active dag `Bronze >> Silver >> Gold` to start batch layer
     - Read the dag file to track the batch process, which starts from **loading data from source to Bronze zone (append-only); cleans, transforms, deduplicate data then upsert into Silver zone; modelings data and upsert into Gold zone**.
     - Watermark will be updated in `./tracking`. Refer to `./tracking/*.backup` to understand how to initialize those watermarks
     - Silver and Gold zone are built based on `merge` operator, so **feel free to re-run** (unless the schema is heavily damage)
     - Gold zone is built by `dbt` as it's quite easy to setup. Read more about `dbt` [here](https://medium.com/@ahmealy/dbt-incremental-models-the-complete-guide-for-postgres-users-de18356a00a7)
 
-- Use `trino` to query delta table (setup via VSCode extension [DBCode](https://dbcode.io/) or just go straight into the container and query in there)
+- Use Trino to query delta table (setup via VSCode extension [DBCode](https://dbcode.io/) or just go straight into the container and query in there)
 
 #### Speed layer (see `./airflow/README.md`)
 
-- Ref for Stream processing
+- Pre-require knowledge for Stream processing
     - Spark Streaming: [Quick start](https://spark.apache.org/docs/latest/streaming/getting-started.html#structured-streaming-programming-guide-1), [Watermark in streaming](https://spark.apache.org/docs/latest/streaming/apis-on-dataframes-and-datasets.html#structured-streaming-programming-guide-1), [Spark - Kafka](https://spark.apache.org/docs/latest/streaming/structured-streaming-kafka-integration.html)
     - Watermark in streaming - [Explanation](https://www.youtube.com/watch?v=XjlKGvUt2dY)
-
-- Add a CDC connector to capture changelog from Datasource and publish into a Kafka topic
-
-    ```bash
-    cd ./cdc
-    sh connector_register.sh ./configs/postgres-cdc.json
-    ```
-
-    - Check the status at `control-center` (<http://localhost:9021>), tab `Connector`
 
 - Trigger 3 dags: `Bronze Ingestion`, `Silver Transformation`, and `Gold Stream Modeling`. Note that
     - Since they are stream jobs, these dags will `awaitTermination`
@@ -160,4 +195,4 @@ This instruction shows the way to config infrastructure (i.e., how to run the sy
 - A view in Postgres unions batch serving tables and stream serving table to serve newest data to end user
 - The view is created as follows
     - Batch part: Query the whole batch historical data
-    - Stream part: Only query from the last updated date from batch part
+    - Stream part: Only query from the part that batch layer doesn't include (yet)
