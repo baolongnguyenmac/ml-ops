@@ -116,7 +116,7 @@ def _insert_batch(df:DataFrame, n_chunk:int, host:str, target_table:str, delay:i
 
     total_inserted = 0
     if n_chunk != 1:
-        chunks = df.randomSplit(weights=[1.]*n_chunk, seed=42)
+        chunks = [df.sample(fraction=1/n_chunk, seed=i) for i in range(n_chunk)]
     else:
         chunks = [df]
     for idx, chunk in enumerate(chunks):
